@@ -2780,8 +2780,7 @@ mod tests {
 
     #[test]
     fn source_link_label_starts_at_freebsd_sys() {
-        let dwarf =
-            "/build/workspace/firmware-2/FreeBSD/sys/netinet/tcp_lro.c";
+        let dwarf = "/build/workspace/firmware-2/FreeBSD/sys/netinet/tcp_lro.c";
         let url = "https://git.example.com/acme/firmware/blob/abc/FreeBSD/sys/netinet/tcp_lro.c";
         assert_eq!(
             source_link_label(dwarf, url),

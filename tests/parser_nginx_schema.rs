@@ -43,9 +43,9 @@ fn request_start(request: u32, uri: &str) -> Vec<u8> {
 }
 
 #[test]
-fn ncd10174_request_start_decodes_varlen_uri() {
+fn v1_request_start_decodes_varlen_uri() {
     let bytes = synthetic_elog_nginx_schema(
-        NGINX_BLOB_NCD10174,
+        NGINX_BLOB_V1,
         &[
             (1_000, CONN, 0, request_start(1, "/f/fa/2051805908.ismv")),
             (
@@ -71,8 +71,8 @@ fn ncd10174_request_start_decodes_varlen_uri() {
     assert!(req.detail.is_none());
 }
 
-/// Every NCD-10222 event, packed as the firmware emits it.
-fn ncd10222_events() -> Vec<NginxSchemaEvent> {
+/// Every connection-diagnostics event, packed as the firmware emits it.
+fn v2_events() -> Vec<NginxSchemaEvent> {
     vec![
         (500, CONN, 200, Packed::new().u16(443).u8(1).done()),
         (
@@ -222,8 +222,8 @@ fn ncd10222_events() -> Vec<NginxSchemaEvent> {
 }
 
 #[test]
-fn ncd10222_events_decode_and_fold() {
-    let bytes = synthetic_elog_nginx_schema(NGINX_BLOB_NCD10222, &ncd10222_events());
+fn v2_events_decode_and_fold() {
+    let bytes = synthetic_elog_nginx_schema(NGINX_BLOB_V2, &v2_events());
     let (nginx, providers) = parse(&bytes);
     let p = providers.iter().find(|p| p.name == "nginx").unwrap();
     assert!(
@@ -232,7 +232,7 @@ fn ncd10222_events_decode_and_fold() {
         p.schema_divergent_events
     );
     assert!(p.schema_new_fields.is_empty(), "{:?}", p.schema_new_fields);
-    assert_eq!(nginx.events.len(), ncd10222_events().len());
+    assert_eq!(nginx.events.len(), v2_events().len());
 
     let req = &nginx.requests[&(NGINX_SCHEMA_PID, CONN, 1)];
     assert_eq!(req.uri, "/range/abc?o=1");
@@ -282,8 +282,8 @@ fn ncd10222_events_decode_and_fold() {
 }
 
 #[test]
-fn ncd10222_diag_summary_and_series() {
-    let bytes = synthetic_elog_nginx_schema(NGINX_BLOB_NCD10222, &ncd10222_events());
+fn v2_diag_summary_and_series() {
+    let bytes = synthetic_elog_nginx_schema(NGINX_BLOB_V2, &v2_events());
     let (nginx, _) = parse(&bytes);
 
     let d = build_nginx_diag_summary(&nginx, CAPTURE_START);

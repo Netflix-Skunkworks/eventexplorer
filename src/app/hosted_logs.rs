@@ -17,7 +17,7 @@
 #[allow(unused_imports)]
 use super::*;
 
-/// Sibling directory served next to a typical ocadev wasm drop
+/// Sibling directory served next to a typical dev-host wasm drop
 /// (`…/eventexplorer/` → `…/logs/`).
 #[cfg(any(test, target_arch = "wasm32"))]
 pub const HOSTED_LOGS_URL: &str = "../logs/";
@@ -424,7 +424,7 @@ mod tests {
 <body>
 <h1>Index of /~user/logs/</h1><hr><pre><a href="../">../</a>
 <a href="ella-scale/">ella-scale/</a>                                        23-Sep-2026 14:11                   -
-<a href="ella-c190.nyc005.ix.elog.gz">ella-c190.nyc005.ix.elog.gz</a>                        16-Sep-2026 13:00            95045753
+<a href="ella-c102.lab002.ix.elog.gz">ella-c102.lab002.ix.elog.gz</a>                        16-Sep-2026 13:00            95045753
 <a href="spreadout-to-cores-96-2026-09-23T155934Z.elog.gz">spreadout-to-cores-96-2026-09-23T155934Z.elog.gz</a>   23-Sep-2026 17:37           518623067
 <a href="notes.txt">notes.txt</a>                                          01-Jan-2026 00:00                 12
 </pre><hr></body>
@@ -436,7 +436,7 @@ mod tests {
         let parsed = parse_autoindex(NGINX_LISTING);
         assert_eq!(parsed.dirs, vec!["ella-scale/".to_string()]);
         assert_eq!(parsed.files.len(), 2);
-        assert_eq!(parsed.files[0].href, "ella-c190.nyc005.ix.elog.gz");
+        assert_eq!(parsed.files[0].href, "ella-c102.lab002.ix.elog.gz");
         assert_eq!(parsed.files[0].size, Some(95_045_753));
         assert_eq!(
             parsed.files[1].href,

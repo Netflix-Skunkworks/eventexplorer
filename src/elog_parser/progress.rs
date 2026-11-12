@@ -23,7 +23,7 @@ use super::*;
 ///
 /// Bundles two pieces of feedback:
 /// - a permille (0–1000) progress fraction for a determinate bar
-/// - a human-readable status string ("Connecting to ocadev…",
+/// - a human-readable status string ("Connecting to devhost…",
 ///   "Downloaded 4.2 MiB", "Parsing events…", "Sorting sessions…")
 ///
 /// Both halves are independently updated by the parser thread and read by

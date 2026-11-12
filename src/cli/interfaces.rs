@@ -64,7 +64,7 @@ pub fn cmd_interfaces(prof: &IfProfile) {
 /// `rx_Bps`/`tx_Bps` are the link-level totals. On captures with the
 /// TCP/UDP/other split (`IF_SAMPLE_BYTES`/`IF_SAMPLE_PACKETS`, ids 21/22)
 /// three more column pairs break that total down into `tcp_*`/`udp_*`/
-/// `other_*`. On a schema new enough to carry it (NCD-10070),
+/// `other_*`. On a schema new enough to carry it (appended `other_*` fields),
 /// `other_rx_Bps`/`other_tx_Bps` is a direct kernel counter, bumped at
 /// the same IP-dispatch call site as tcp/udp -- NOT `rx_Bps -
 /// tcp_rx_Bps - udp_rx_Bps`. `tcp+udp+other` is self-consistent by

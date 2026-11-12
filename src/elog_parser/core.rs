@@ -1485,8 +1485,8 @@ fn parse_elog_from(
                 // Deprecated: no protocol split, carried for old captures.
                 // tcp/udp are 0 (no classification data at all), so the
                 // "other" fallback below correctly attributes 100% of
-                // traffic to other -- consistent with pre-NCD-10070
-                // behavior for this event.
+                // traffic to other -- consistent with the behavior
+                // before the appended other_* counters.
                 EVT_IF_SAMPLE if ir.typed() || payload_size >= 96 => {
                     let ibytes = ir.u64("ibytes", 8);
                     let obytes = ir.u64("obytes", 16);
@@ -1535,7 +1535,7 @@ fn parse_elog_from(
                     let tcp_obytes = ir.u64("tcp_obytes", 32);
                     let udp_ibytes = ir.u64("udp_ibytes", 40);
                     let udp_obytes = ir.u64("udp_obytes", 48);
-                    // other_ibytes/obytes (NCD-10070) are additive fields
+                    // other_ibytes/obytes are additive fields
                     // appended after udp_obytes: present (a direct,
                     // IP-dispatch-synchronous counter) on a schema new
                     // enough to carry them, else derived the old way.

@@ -12,10 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! `upload` subcommand: push local captures to elog-access's Uploads
-//! sharing service (presigned S3 PUT, 365-day retention) and print a
-//! shareable EventExplorer link. Skips the full parse — the bytes go
-//! to S3 unopened, so only the magic is checked.
+//! `upload` subcommand: push local captures to the site's share server
+//! (presigned object-store PUT) and print a shareable EventExplorer
+//! link. Skips the full parse — the bytes go to storage unopened, so
+//! only the magic is checked.
 
 pub(crate) use crate::cli::*;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};

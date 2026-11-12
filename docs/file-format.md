@@ -551,7 +551,7 @@ explicit decoder resolve to `Other` and are dropped.
 | id | Name | Decoded |
 |----|------|---------|
 | 400 | `RTO` | yes: `timeout_num, min_rtt, rtt, segment_len, inflight, pkts_out` on a 24-byte-or-newer payload; treated as a marker-only event (fields zeroed) on older, smaller payloads. |
-| 401 | `RETRANSMIT_REASON` | no | Superseded by `TCP_FLAG_RETRANSMIT` on `EVT_OUT.flags` (NCD-10252), which marks the retransmitting send directly. Not decoded. |
+| 401 | `RETRANSMIT_REASON` | no | Superseded by `TCP_FLAG_RETRANSMIT` on `EVT_OUT.flags`, which marks the retransmitting send directly. Not decoded. |
 | 402 | `DSACK` | yes: `dsack_round_seen (u8), dsack_round_end (u32), num_dsack (u32), dsack_persist (u32), mod (u8), round (u32)` on a 24-byte-or-newer payload; treated as a marker-only event (fields zeroed) on older, smaller payloads. |
 
 ### Timers (500–599)
@@ -567,7 +567,7 @@ decoded.
 | 601 | `PACE_STATE` | yes: `rc_pace_min_segs, rc_pace_max_segs` |
 | 602 | `HW_PACE_RATE` | no |
 | 603 | `PACING_CALC_V2` | yes: same as v1 but with a real `cap_source` byte |
-| 604 | `STARS_PACE` | yes: `natural_bps, scaled_bps, pressure, len`. Per-connection STARS squeeze diagnostic (NCD-9761); only emitted for connections with eventlog enabled (see `net.inet.tcp.eventlog.auto_ratio`). |
+| 604 | `STARS_PACE` | yes: `natural_bps, scaled_bps, pressure, len`. Per-connection STARS squeeze diagnostic; only emitted for connections with eventlog enabled (see `net.inet.tcp.eventlog.auto_ratio`). |
 
 `cap_source` values (see `pacing_cap_name` in `elog_parser.rs`):
 
@@ -651,7 +651,7 @@ to typed `EventPayload` variants and stored on the session; survive
 
 ## CPU provider event-id catalog
 
-Schema source: [`cpu_eventlog_schema.src`](https://github.com/nflx-internal-paths)
+Schema source: `cpu_eventlog_schema.src`
 in the FreeBSD source tree. The provider creates one eventlog session
 per CPU at module load; the per-event `session_id` is the sampling
 cpu id.
@@ -955,10 +955,10 @@ subcommands.
 | 8 | `IF_ADDR_ADD` | yes | `ifindex`, address family + a variable-length `addr[]`. |
 | 9 | `IF_ADDR_REMOVE` | yes | As `IF_ADDR_ADD`. |
 | 20 | `IF_SAMPLE` | yes | **Deprecated** — no longer emitted by the kernel, superseded by `IF_SAMPLE_BYTES`/`IF_SAMPLE_PACKETS` below. Kept so older captures still decode. Periodic per-interface counter snapshot: `ifindex` plus twelve `u64` cumulative counters — `ibytes`, `obytes`, `ipackets`, `opackets`, `ierrors`, `oerrors`, `iqdrops`, `oqdrops`, `imcasts`, `omcasts`, `noproto`. |
-| 21 | `IF_SAMPLE_BYTES` | yes | Periodic per-interface byte snapshot: `ifindex`, `ibytes`, `obytes` (same link-level totals as `IF_SAMPLE`), a transport-protocol split `tcp_ibytes`/`tcp_obytes`/`udp_ibytes`/`udp_obytes`, and (schemas from NCD-10070 onward) `other_ibytes`/`other_obytes` for every non-TCP/UDP IP packet. Emitted immediately before `IF_SAMPLE_PACKETS` for the same `ifindex` at each sample tick; `core.rs` merges the pair into one `IfSample` keyed by `ifindex`. |
-| 22 | `IF_SAMPLE_PACKETS` | yes | Periodic per-interface packet snapshot: `ifindex`, `ipackets`, `opackets` plus `tcp_ipackets`/`tcp_opackets`/`udp_ipackets`/`udp_opackets`, then the link-level `ierrors`, `oerrors`, `iqdrops`, `oqdrops`, `imcasts`, `omcasts`, `noproto` carried over unsplit from `IF_SAMPLE` (these occur before a packet can be classified by L4 protocol), and (schemas from NCD-10070 onward) trailing `other_ipackets`/`other_opackets`. Completes the `IfSample` record started by `IF_SAMPLE_BYTES`. |
+| 21 | `IF_SAMPLE_BYTES` | yes | Periodic per-interface byte snapshot: `ifindex`, `ibytes`, `obytes` (same link-level totals as `IF_SAMPLE`), a transport-protocol split `tcp_ibytes`/`tcp_obytes`/`udp_ibytes`/`udp_obytes`, and (newer schemas) `other_ibytes`/`other_obytes` for every non-TCP/UDP IP packet. Emitted immediately before `IF_SAMPLE_PACKETS` for the same `ifindex` at each sample tick; `core.rs` merges the pair into one `IfSample` keyed by `ifindex`. |
+| 22 | `IF_SAMPLE_PACKETS` | yes | Periodic per-interface packet snapshot: `ifindex`, `ipackets`, `opackets` plus `tcp_ipackets`/`tcp_opackets`/`udp_ipackets`/`udp_opackets`, then the link-level `ierrors`, `oerrors`, `iqdrops`, `oqdrops`, `imcasts`, `omcasts`, `noproto` carried over unsplit from `IF_SAMPLE` (these occur before a packet can be classified by L4 protocol), and (newer schemas) trailing `other_ipackets`/`other_opackets`. Completes the `IfSample` record started by `IF_SAMPLE_BYTES`. |
 
-`other_ibytes`/`other_obytes`/`other_ipackets`/`other_opackets` (NCD-10070)
+`other_ibytes`/`other_obytes`/`other_ipackets`/`other_opackets`, when present,
 are bumped at the same IP-dispatch call site as the `tcp_*`/`udp_*`
 counters, so `tcp + udp + other` is self-consistent by construction. That
 sum is NOT guaranteed to equal `ibytes`/`obytes`/`ipackets`/`opackets`,
@@ -969,7 +969,7 @@ observed even though the two reconcile over multi-second windows. On an
 older schema that predates these fields, EventExplorer falls back to
 deriving them per-sample as `ibytes - tcp_ibytes - udp_ibytes` (and
 similarly for `obytes`/packets) via `IfSample::other_ibytes` etc — the
-pre-NCD-10070 behavior, kept for older captures. On captures that only
+behavior before these fields existed, kept for older captures. On captures that only
 have the deprecated `IF_SAMPLE`, `tcp_*`/`udp_*` read as 0 and `other_*`
 equals the total — i.e. no protocol data available, not "all other
 traffic". EventExplorer diffs successive samples per `ifindex` to derive

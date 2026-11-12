@@ -731,7 +731,7 @@ pub static IF_EXPECTED: &[ExpectedEvent] = &[
         ],
     },
     ExpectedEvent {
-        // other_ibytes/obytes (NCD-10070): core.rs reads them only when the
+        // other_ibytes/obytes (appended): core.rs reads them only when the
         // schema has them, else derives them from the totals.
         event_id: EVT_IF_SAMPLE_BYTES,
         fields: &[

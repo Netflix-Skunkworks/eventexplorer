@@ -85,6 +85,7 @@ impl Key {
         }
     }
 
+    #[cfg_attr(test, allow(dead_code))]
     fn baked(self) -> Option<&'static str> {
         match self {
             Key::UploadsUrl => option_env!("EE_SITE_UPLOADS_URL"),
@@ -97,6 +98,7 @@ impl Key {
         }
     }
 
+    #[cfg_attr(any(test, target_arch = "wasm32"), allow(dead_code))]
     fn from_name(name: &str) -> Option<Key> {
         Key::ALL.into_iter().find(|k| k.name() == name)
     }

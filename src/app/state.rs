@@ -1409,7 +1409,7 @@ impl EventExplorerApp {
                 let resp = ui.add(
                     egui::TextEdit::singleline(buf)
                         .desired_width(f32::INFINITY)
-                        .hint_text("ocadev:/octal/elog/foo.elog.gz"),
+                        .hint_text("devhost:/var/tmp/foo.elog.gz"),
                 );
                 resp.request_focus();
 

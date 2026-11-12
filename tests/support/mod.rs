@@ -606,7 +606,7 @@ fn p_if_sample_packets(
     v
 }
 
-/// NCD-10070 shape: `IF_SAMPLE_BYTES` with the appended `other_ibytes`/
+/// Newer shape: `IF_SAMPLE_BYTES` with the appended `other_ibytes`/
 /// `other_obytes` fields (72 bytes total). Used to exercise the direct-
 /// counter decode path, as opposed to `p_if_sample_bytes`'s 56-byte
 /// shape which exercises the derive-from-subtraction fallback.
@@ -631,7 +631,7 @@ fn p_if_sample_bytes_with_other(
     v
 }
 
-/// NCD-10070 shape: `IF_SAMPLE_PACKETS` with the appended
+/// Newer shape: `IF_SAMPLE_PACKETS` with the appended
 /// `other_ipackets`/`other_opackets` fields (128 bytes total). See
 /// `p_if_sample_bytes_with_other`.
 #[allow(clippy::too_many_arguments)]
@@ -1435,7 +1435,7 @@ pub fn synthetic_elog_proc_exec() -> Vec<u8> {
     out
 }
 
-/// NCD-10070 regression: an "if"-only capture using the appended
+/// Direct-`other` regression: an "if"-only capture using the appended
 /// `other_ibytes`/`other_obytes`/`other_ipackets`/`other_opackets`
 /// fields, with `other` deliberately set to a value the old derive-by-
 /// subtraction formula (`total - tcp - udp`) would NOT produce (55/45
@@ -1711,9 +1711,8 @@ fn p_ella_channel_count(
     b
 }
 
-/// An ELLA-only capture of `ella_relay` channel-layer events (corp/ella
-/// PR #456): instance attach, one channel session, subscriber, sampled
-/// CHANNEL_COUNT, plus a global RELAY_ERROR. Isolated from the shared
+/// An ELLA-only capture of `ella_relay` channel-layer events: instance
+/// attach, one channel session, subscriber, sampled CHANNEL_COUNT, plus a global RELAY_ERROR. Isolated from the shared
 /// golden fixture so CLI goldens stay stable.
 pub fn synthetic_elog_ella() -> Vec<u8> {
     let mut w = Writer::new();
@@ -2361,7 +2360,7 @@ pub fn synthetic_elog_if_sample_split() -> Vec<u8> {
 /// events on one session: one from the common-return scaler (squeezed
 /// below natural) and one from the no-rate-estimate placeholder path
 /// (natural_bps == 1<<24, unsqueezed since pressure is 0 here) -- the two
-/// shapes NCD-9761's `TCP_EVENTLOG_STARS_PACE_LOG` call sites emit.
+/// shapes the `TCP_EVENTLOG_STARS_PACE_LOG` call sites emit.
 pub fn synthetic_elog_stars_pace() -> Vec<u8> {
     let mut w = Writer::new();
     w.event(
@@ -3254,14 +3253,15 @@ pub fn synthetic_elog_mem() -> Vec<u8> {
 // ---------------------------------------------------------------------------
 // nginx captures carrying the real ocafirmware decode blobs.
 //
-// `nginx_schema_ncd10174.edb` / `nginx_schema_ncd10222.edb` are the `EDB1`
-// images `eventlog_gen.awk` emits for `nginx_eventlog_schema.src` at those
-// firmware changes (packed structs, varlen `uri`/`msg`/`peer`). Payloads
-// below are packed to match.
+// `nginx_schema_v1.edb` / `nginx_schema_v2.edb` are the `EDB1`
+// images `eventlog_gen.awk` emits for `nginx_eventlog_schema.src` at two
+// firmware changes: packed structs with varlen `uri`/`msg`/`peer`, then
+// the connection/TLS/disk diagnostics events. Payloads below are packed to
+// match.
 // ---------------------------------------------------------------------------
 
-pub const NGINX_BLOB_NCD10174: &[u8] = include_bytes!("nginx_schema_ncd10174.edb");
-pub const NGINX_BLOB_NCD10222: &[u8] = include_bytes!("nginx_schema_ncd10222.edb");
+pub const NGINX_BLOB_V1: &[u8] = include_bytes!("nginx_schema_v1.edb");
+pub const NGINX_BLOB_V2: &[u8] = include_bytes!("nginx_schema_v2.edb");
 pub const NGINX_SCHEMA_PID: u16 = 30;
 
 /// Little-endian packed payload builder (C `__packed` layout).

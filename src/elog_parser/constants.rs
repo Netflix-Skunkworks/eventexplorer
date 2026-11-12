@@ -117,7 +117,7 @@ pub const EVT_WINDOW_COLLAPSE: u32 = 205;
 pub const EVT_HYSTART: u32 = 206;
 pub const EVT_GOODPUT: u32 = 207;
 /// NOT IN THE CURRENT SCHEMA TREE: audited against `tcp_eventlog_schema.src`
-/// on `master` and the `NCD-9706-cpu-samples-integration` branch (2026-08)
+/// on `master` and the CPU-samples integration branch (2026-08)
 /// and id 208 is unassigned in both — GOODPUT (207) is immediately followed
 /// by RTT (300). Kept defensively in case some other deployed kernel branch
 /// still emits it; harmless if not (the id simply never appears on the wire).
@@ -145,7 +145,7 @@ pub const EVT_HW_PACE_RATE: u32 = 602;
 /// schemas audited 2026-08 have a single PACING_CALC (600) with no `_V2`
 /// and no `cap_source` field. Kept defensively for the reasons above.
 pub const EVT_PACING_CALC_V2: u32 = 603;
-/// Per-connection STARS squeeze diagnostic (NCD-9761): logs the natural
+/// Per-connection STARS squeeze diagnostic: logs the natural
 /// (pre-squeeze) pacing rate alongside the result of
 /// `hpts_stars_pace_rate()` and the global pressure that produced it.
 /// Only emitted for connections with eventlog enabled (see
@@ -640,7 +640,7 @@ pub const DECODE_MAX_FIELD_WIDTH: u32 = 256;
 pub const DECODE_MAX_FORMAT_FIELDS: usize = 256;
 
 // ---------------------------------------------------------------------------
-// ELLA `fanout_node` channel-layer events (corp/ella PR #456). Older
+// ELLA `fanout_node` channel-layer events. Older
 // captures register the same catalog as `ella_relay`. Session id 0 is the
 // process-wide global session; every other session is one channel, shared
 // by both node sides. Layouts are C natural alignment.
@@ -718,7 +718,7 @@ pub const EVT_NGINX_REQUEST_DONE: u32 = 2;
 pub const EVT_NGINX_REQUEST_MESSAGE: u32 = 3;
 // Per-worker sampled request stats, once per second per worker.
 pub const EVT_NGINX_SAMPLE: u32 = 100;
-// Connection lifecycle (NCD-10222).
+// Connection lifecycle.
 pub const EVT_NGINX_CONN_START: u32 = 200;
 pub const EVT_NGINX_CONN_END: u32 = 201;
 pub const EVT_NGINX_TLS_HANDSHAKE_DONE: u32 = 300;

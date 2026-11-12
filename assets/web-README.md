@@ -77,8 +77,8 @@ http://localhost:8000/?file=https://other.host/foo.elog
 
 Absolute URLs are subject to the target server's CORS policy.
 
-On deployments that serve a sibling `../logs/` autoindex (the ocadev
-layout next to this bundle), the splash page lists those `.elog` /
+On deployments that serve a sibling `../logs/` autoindex (a dev host's
+`~/public_html` layout next to this bundle), the splash page lists those `.elog` /
 `.elog.gz` files for one-click open. Opening one (or a URL from the
 splash field) pushes `?file=` so the browser Back button returns to
 the landing page.
@@ -109,6 +109,15 @@ Or just use the file picker (button in the top-left of the app).
   closer to 1–2 GB. Captures of a few hundred MB load comfortably;
   multi-GB captures may OOM.
 - **No window-state persistence.** Browser owns the tab geometry.
+
+## Site features
+
+Capture sharing by upload, symbol-pack resolution, and the page share
+links open come from a site config baked in at build time
+(`EE_SITE_CONFIG=site.toml trunk build`). A bundle built without one
+shares only the view link for captures loaded from a URL, and leaves
+symbol-pack frames as `kernel+0xOFF`. See `docs/site-config.md` in the
+source repository.
 
 For the full feature set, parallelism, and bigger captures, use the
 desktop binary from the same release.

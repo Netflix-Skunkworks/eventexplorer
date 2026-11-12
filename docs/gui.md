@@ -156,7 +156,8 @@ Once a file is loaded, a tab bar appears at the top of the window:
 - **Annotated source tabs** — opened by right-clicking a resolved function in
   Processes or Flame. The source view opens centered on the hottest sampled
   line; the **←** and **→** buttons jump to the previous and next source line
-  that has samples.
+  that has samples. Firmware-tree files need `firmware_repo` in the
+  [site config](site-config.md).
 - **`+`** — opens the Session List tab, where you can add TCP session
   or Fanout channel tabs. Shown whenever there is at least one TCP
   session, Fanout channel, or nginx request list. It sits after the
@@ -392,7 +393,7 @@ are shown; the rest start hidden, in this catalog order:
   attempt failures, sendfile EBUSY deferrals and errors, file-open
   failures, blocking aio reads, worker stalls), the Time buckets count
   (default 250) over the visible window. Listed in the catalog only when the capture has any
-  of those events (firmware with NCD-10222).
+  of those events (firmware with the nginx diagnostic events).
 - **HTTP Completion Bytes** — `REQUEST_DONE.bytes_sent` as Gb/s
   (same unit as Network TX/RX), the Time buckets count (default 250)
   over the visible window.
@@ -731,7 +732,7 @@ this interface's traffic break down":
   TCP (top), stacked so the total height already equals the
   interface's all-protocol rate. The plot legend toggles each band. On a
   schema new enough to carry a direct `other` counter
-  (NCD-10070) the stack is self-consistent by construction; on an older
+  (appended `other_*` fields) the stack is self-consistent by construction; on an older
   schema `other` is derived as total minus TCP minus UDP — see
   [file-format.md](file-format.md#if-provider-event-id-catalog).
   The TX stack draws the same solid **drops/s** line as All Interfaces,
@@ -995,7 +996,8 @@ tab-bar gear.
   force-freed) are used only when that session has no nginx data.
   Shares the session time
   axis with the RTT/Rate/CWND/Sizes panels. Lock it from the sidebar
-  to pin it above the scroll. On NCD-10222 firmware the nginx bar
+  to pin it above the scroll. On firmware with the nginx diagnostic
+  events the nginx bar
   tooltip adds cache status, upstream tries, disk busy / aio wait,
   abnormal-completion flags and message count.
 - **HTTP Response Size** (when the session has nginx requests) — a
@@ -1514,8 +1516,8 @@ User-visible differences from the desktop GUI:
   and press Enter / *Open* — same fetch as `?file=` (`history.pushState` so Back
   returns to the splash; a refresh still reloads the capture). The
   host must allow this origin (CORS). When
-  the page is served next to a `../logs/` autoindex (the ocadev
-  layout: `…/eventexplorer/` beside `…/logs/`), the splash also lists
+  the page is served next to a `../logs/` autoindex (a dev host's
+  `~/public_html` layout: `…/eventexplorer/` beside `…/logs/`), the splash also lists
   those captures — including one subdirectory — for one-click open.
   Drag-and-drop is not wired up (yet).
 - **No recent-files list.** The list resets every time you reload the
@@ -1562,17 +1564,18 @@ from:
   text) with a *Copy to clipboard* button, so Ctrl+C and the
   right-click Copy menu work, including on plain HTTP.
 - **Loaded from your computer** (file picker on web, or any desktop
-  load): the dialog offers to **upload the capture to elog-access**
-  first. Enter a cache name (pre-filled from the capture's own
-  hostname when it has one) and an optional note, and click **Upload
-  to Share** (web) or **Upload & Copy Link** (desktop). The bytes go
-  straight from your machine to S3 on a presigned URL — the
-  elog-access app never proxies them — and the upload's long-lived
-  download URL (a 307 to a freshly-signed S3 GET on every fetch)
-  becomes the link's `file=`, so the link lives as long as the
-  upload: the bucket's 365-day retention. Uploads appear on
-  elog-access's *Uploads* tab, where you can also delete your own.
-  The S3 PUT requires full-tunnel VPN, and one upload is capped at
+  load): when the build has a share server configured (`uploads_url`
+  in the [site config](site-config.md)), the dialog offers to
+  **upload the capture** first. Enter a cache name (pre-filled from
+  the capture's own hostname when it has one) and an optional note,
+  and click **Upload to Share** (web) or **Upload & Copy Link**
+  (desktop). The bytes go straight from your machine to object
+  storage on a presigned URL — the share server never proxies them —
+  and the upload's long-lived download URL (a 307 to a
+  freshly-signed GET on every fetch) becomes the link's `file=`, so
+  the link lives as long as the upload. Any site-specific note
+  (`upload_note`: retention, network requirements) is shown in the
+  dialog. One upload is capped at
   2 GiB. A rolled set uploads each file in turn and the link loads
   the whole set. The `file=` URL carries the original file name in a
   `#fragment` — display-only, never sent to the server — so the
@@ -1580,11 +1583,15 @@ from:
   `download`.
 - **Desktop specifics**: the dialog is an egui window, and when the
   upload completes the permalink is already on your clipboard. The
-  desktop authenticates with `metatron` (the CLI must be installed
-  and able to fetch an E2E token). Captures loaded over SSH can't be
+  desktop sends API requests through the site's `http_command` (plain
+  `curl` by default), which is where a site adds authentication.
+  Without a share server the 🔗 button is hidden on desktop.
+  Captures loaded over SSH can't be
   uploaded from the dialog — run `elog_cli upload` on that host
   instead (see [cli.md](cli.md#upload)).
-- **Web specifics**: when the upload finishes the overlay swaps to
+- **Web specifics**: the browser calls the share server with the
+  hosting page's session/cookies. Without a share server the dialog
+  shows only the view link. When the upload finishes the overlay swaps to
   the link and the page URL is updated in place, so a refresh
   reloads the uploaded capture. Copy is a click away — browsers
   don't let pages pre-empt the clipboard.

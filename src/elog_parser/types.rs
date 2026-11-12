@@ -483,7 +483,7 @@ impl TcpSampleProfile {
 }
 
 // ---------------------------------------------------------------------------
-// ELLA `fanout_node` channel-layer profile (corp/ella PR #456)
+// ELLA `fanout_node` channel-layer profile
 // ---------------------------------------------------------------------------
 
 /// Per-channel identity accumulated from SESSION_CREATE / ID_ASSIGNED /
@@ -1113,7 +1113,7 @@ pub enum NginxPayload {
     },
 }
 
-/// `REQUEST_DONE` fields appended in NCD-10222.
+/// `REQUEST_DONE` fields appended with the connection diagnostics events.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct NginxDoneDetail {
     /// `NGINX_DONE_*` bits.
@@ -1401,10 +1401,10 @@ pub struct IfInterface {
 /// call site as tcp/udp, so `tcp_* + udp_* + other_*` is self-consistent
 /// by construction -- unlike `ibytes`/`obytes`, which on a multi-port
 /// aggregate interface (lagg) are a live sum of member-port driver
-/// counters and can diverge from that sum per-tick (NCD-10070). On an
+/// counters and can diverge from that sum per-tick. On an
 /// older schema that predates the field, `core.rs` falls back to
 /// deriving it as `ibytes - tcp_ibytes - udp_ibytes`, matching this
-/// struct's pre-NCD-10070 behavior.
+/// struct's behavior before the appended `other_*` counters.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct IfSample {
     pub ts: u64,
@@ -2797,7 +2797,7 @@ pub enum EventPayload {
         rc_pace_min_segs: u32,
         rc_pace_max_segs: u32,
     },
-    /// STARS squeeze diagnostic (NCD-9761): natural (pre-squeeze) rate vs.
+    /// STARS squeeze diagnostic: natural (pre-squeeze) rate vs.
     /// the result of `hpts_stars_pace_rate()`, plus the global pressure
     /// that produced it. Emitted only when this connection's eventlog
     /// session is enabled.
@@ -2978,7 +2978,7 @@ pub enum EventPayload {
     /// authoritative `sbused()` snapshot). Carries the *syscall
     /// arguments* — the `offset`/`nbytes`/`flags` the app passed in
     /// — not the per-iteration chunk size. For non-blocking sockets
-    /// (the common Netflix CDN path) `sendfile_wait_generic` returns
+    /// (the common CDN path) `sendfile_wait_generic` returns
     /// `EAGAIN` after the first chunk, so the loop typically
     /// iterates once and `length` ends up being the app's
     /// *lookahead window* (often megabytes) rather than the bytes

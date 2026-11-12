@@ -50,7 +50,7 @@ output — are in the [GUI guide](docs/gui.md) and
 ## Quick start
 
 Grab a prebuilt tarball for Linux x86_64 or FreeBSD amd64 from the
-[latest release](https://github.netflix.net/corp/eventexplorer/releases/latest):
+[latest release](https://github.com/Netflix-Skunkworks/eventexplorer/releases/latest):
 
 ```bash
 tar xzf eventexplorer-*-linux-x86_64.tar.gz
@@ -119,6 +119,14 @@ trunk build                 # static bundle in ./dist/
 See [architecture.md](docs/architecture.md#web-target-wasm32) for what the
 web build gates out and how to deploy `dist/` to a static host.
 
+### Site configuration (optional)
+
+Capture sharing, symbol-pack resolution, and firmware source links need
+servers that belong to a deployment. They are off until a site config
+points at them — through `ELOG_*` environment variables, a
+`site.toml` file, or values baked in at build time. See
+[site-config.md](docs/site-config.md).
+
 ## Documentation
 
 - [GUI user guide](docs/gui.md) — every tab and panel, overlays, and
@@ -127,6 +135,8 @@ web build gates out and how to deploy `dist/` to a static host.
   output.
 - [.elog file format](docs/file-format.md) — on-disk layout and event-id
   catalog.
+- [Site configuration](docs/site-config.md) — upload, symbol, and
+  firmware-repo settings, and the server APIs they expect.
 - [Architecture overview](docs/architecture.md) — module map, data flow, and
   recipes for adding providers, events, and views.
 - [Contributing](CONTRIBUTING.md) — workflow and the AI tool usage policy.

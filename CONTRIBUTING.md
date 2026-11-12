@@ -41,8 +41,8 @@ trunk build      # static bundle in ./dist/
 ## How changes land
 
 EventExplorer is AI-owned and maintained. **If you have push access, commit
-directly to `master` — no pull request and no code review is required.**
-AI agents must not open a branch or PR unless Nick asks for one in that
+directly to `main` — no pull request and no code review is required.**
+AI agents must not open a branch or PR unless a maintainer asks for one in that
 message. Outside contributors without push access: fork, then open a PR.
 
 Because nothing gates a direct commit, the checks below are the quality bar.
@@ -56,7 +56,7 @@ cargo build --release
 ```
 
 CI runs the same three checks plus a wasm build, so a skipped local run turns
-into a red `master`. Formatting is the most common break — run `cargo fmt --all`
+into a red `main`. Formatting is the most common break — run `cargo fmt --all`
 after your last edit, not before it.
 
 ## Change requirements

@@ -814,15 +814,15 @@ mod tests {
     fn eventexplorer_link_combines_files_and_tail() {
         let link = eventexplorer_link(
             &[
-                "https://share.example.com/api/uploads/id1/download#a.elog"
-                    .into(),
-                "https://share.example.com/api/uploads/id2/download#b.elog"
-                    .into(),
+                "https://share.example.com/api/uploads/id1/download#a.elog".into(),
+                "https://share.example.com/api/uploads/id2/download#b.elog".into(),
             ],
             "session=7&t=1,2",
         );
         assert!(link.starts_with("https://share.example.com/eventexplorer/?"));
-        assert!(link.contains("file=https%3A%2F%2Fshare.example.com%2Fapi%2Fuploads%2Fid1%2Fdownload%23a.elog"));
+        assert!(link.contains(
+            "file=https%3A%2F%2Fshare.example.com%2Fapi%2Fuploads%2Fid1%2Fdownload%23a.elog"
+        ));
         assert!(link.contains("&file="));
         assert!(link.ends_with("&session=7&t=1,2"));
     }

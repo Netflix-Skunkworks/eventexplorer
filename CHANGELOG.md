@@ -9,7 +9,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - Pacing views work on default captures where the kernel no longer
-  collects `PACING_CALC` (ocafirmware NCD-10385 moves it to TRACE).
+  collects `PACING_CALC` (current firmware logs it only at TRACE).
   The pacing-rate line, the session-list Pacing column, and the
   Overview paced/unpaced split fall back to the new `GOODPUT.pacing_bw`
   field. The limiter's pacing gate falls back to the new log-only
@@ -20,16 +20,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   capture per gzip member) opens as one rolled set, in the GUI, the
   CLI, and the browser build. The trace's file list names each member
   from its gzip filename when the member header carries one.
-- Share captures via elog-access uploads. The tab-bar 🔗 button now
-  works on desktop too: when the loaded capture has no URL (any
-  desktop load, or the browser's file picker), the Share dialog
-  uploads it to elog-access (presigned S3 PUT, bytes never proxied
-  through the app; 365-day retention) and builds a view-state
+- Share captures by upload to a site-configured share server. The
+  tab-bar 🔗 button now works on desktop too: when the loaded capture
+  has no URL (any desktop load, or the browser's file picker), the
+  Share dialog uploads it (presigned object-store PUT, bytes never
+  proxied through the server) and builds a view-state
   permalink on the upload's long-lived download URL. Desktop copies
   the link straight to the clipboard; the web overlay swaps to it
   and updates the page URL in place. New `elog_cli upload
   [--cache NAME] [--note TEXT] [--open]` subcommand for the same
-  flow from scripts and remote hosts.
+  flow from scripts and remote hosts. Upload, symbol-catalog and
+  firmware-repo endpoints come from the site config
+  ([docs/site-config.md](docs/site-config.md)): `ELOG_*` environment
+  variables, a `site.toml` file, or values baked in with
+  `EE_SITE_CONFIG`. Unset keys turn those features off.
 - Support new TCP eventlog flags from ocafirmware (`FLAG tcp_flags`):
   `TCP_FLAG_FIN`, `SYN`, `RST`, `PUSH`, `ACK`, `URG`, `ECE`, `CWR`, `AE`,
   and the log-only `TLP` (0x4000) and `RETRANSMIT` (0x8000) flags.
@@ -99,7 +103,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   listed. **HPTS Slot Gate** plots (hidden by default). **TCP Smoothed
   RTT** from `TCP_SRTT_SAMPLE`. A Time buckets slider sets how many
   equal-time buckets the time-series plots use.
-- nginx NCD-10222 events: connections, TLS, cache, upstream, sendfile,
+- nginx diagnostic events: connections, TLS, cache, upstream, sendfile,
   file-open failures, and worker stalls. New `nginxconns` and
   `nginxdiag` commands, extra `nginx` columns, a System **nginx Problem
   Events** plot, and request detail in the session info popup.
@@ -158,7 +162,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   measurement band the same way.
 
 - Web splash lists `.elog` / `.elog.gz` files from a sibling `../logs/`
-  directory listing (ocadev `~/public_html/logs`) so a capture opens
+  directory listing (a dev host's `~/public_html/logs`) so a capture opens
   with one click. One subdirectory level is flattened in, the list is
   centered under the splash card, and rows sort newest-first. The
   list is omitted when that path is missing or is not an autoindex.

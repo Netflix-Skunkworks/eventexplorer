@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Decode coverage for `STARS_PACE` (id 604, NCD-9761): the per-connection
+//! Decode coverage for `STARS_PACE` (id 604): the per-connection
 //! diagnostic logging the natural (pre-squeeze) pacing rate alongside
 //! `hpts_stars_pace_rate()`'s result and the global pressure that produced
 //! it. See `support::synthetic_elog_stars_pace` for the fixture's exact

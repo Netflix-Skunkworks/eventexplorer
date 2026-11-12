@@ -4,7 +4,7 @@ version = "1.6.3"
 edition = "2021"
 
 description = "Cross-platform binary log analyzer for FreeBSD EventLog (.elog) files with an egui desktop GUI and CLI."
-authors = ["nickbanks@netflix.com"]
+authors = ["Netflix, Inc."]
 license = "Apache-2.0"
 readme = "README.md"
 keywords = ["freebsd", "eventlog", "tcp", "elog", "egui"]
@@ -43,7 +43,7 @@ egui_extras = "0.27"
 egui_plot = "0.27"
 flate2 = "1"
 rustc-hash = "2"
-# JSON for the elog-access uploads API (request bodies, response
+# JSON for the share-server uploads API (request bodies, response
 # records). Pure-Rust, wasm32-compatible.
 serde_json = "1"
 # Verifies a v2 capture's embedded decode-blob schema_id (SHA-256 of the

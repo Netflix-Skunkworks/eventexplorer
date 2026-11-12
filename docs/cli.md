@@ -116,7 +116,7 @@ peak RSS is roughly the sum of the individual loads.
 | [`hptsevents`](#hptsevents-filter) | HPTS timing-wheel scheduler trace (version 2 captures). |
 | [`hptslateness`](#hptslateness) | Callout-lateness and batch-size histograms, with `--start-s` / `--end-s`. |
 | [`hptsgaps`](#hptsgaps-exclude_last_secs) | PROCESSING-slot continuity cross-check. |
-| [`upload`](#upload---cache-name---note-text---open) | Share a capture via elog-access (presigned S3 PUT) and print a shareable EventExplorer link. |
+| [`upload`](#upload---cache-name---note-text---open) | Share a capture via the site's share server (presigned PUT) and print a shareable EventExplorer link. |
 
 Running `elog_cli <file>` with an unrecognized command prints the binary's
 own usage text, which also covers the STARS commands (`starsagg`,
@@ -815,7 +815,7 @@ first because most samples on a busy box are kernel-mode):
 # Default: render to SVG via flamegraph.pl. With `elog --embed-symbols`
 # captures, frames render as `name+0xINNER`; otherwise as kernel+0xOFF.
 elog_cli capture-cpu.elog flame \
-  | flamegraph.pl --title "OCA c658 idle profile" > c658.svg
+  | flamegraph.pl --title "OCA c101 idle profile" > c101.svg
 
 # Per-process slice
 elog_cli capture-cpu.elog flame --comm nginx > nginx.folded
@@ -938,7 +938,7 @@ restrict to one. Columns: `t(s)`, `rx_Bps`, `tx_Bps`, `tcp_rx_Bps`,
 them down by transport protocol (see
 [file-format.md](file-format.md#if-provider-event-id-catalog)).
 `other_*` covers every non-TCP/UDP packet (ICMP, etc). On a schema new
-enough to carry it (NCD-10070), it's a direct kernel counter bumped at
+enough to carry it (appended `other_*` fields), it's a direct kernel counter bumped at
 the same IP-dispatch call site as `tcp_*`/`udp_*` — NOT `rx_Bps -
 tcp_rx_Bps - udp_rx_Bps`. `tcp + udp + other` is self-consistent by
 construction, but on a multi-port aggregate interface (`lagg`) it is
@@ -1080,8 +1080,8 @@ status), `tries` (upstream attempts), `flags` (abnormal `REQUEST_DONE`
 flags such as `TIMEDOUT`, `CLIENT_ABORT`, `WRITE_ERROR`; an
 `err_status` is appended when set) and URI. Each `REQUEST_MESSAGE`
 for the request prints on its own `message:` line under the row.
-Cache/tries/flags are `-` on captures from firmware older than
-NCD-10222.
+Cache/tries/flags are `-` on captures from firmware older than the
+nginx diagnostic events.
 
 ## `nginxstats`
 
@@ -1278,46 +1278,47 @@ that caused it.
 
 ## `upload [--cache NAME] [--note TEXT] [--open]`
 
-Shares a local capture by uploading it to elog-access's *Uploads*
-service and printing a link anyone can open in the hosted
+Shares a local capture by uploading it to the share server named by
+`uploads_url` in the [site config](site-config.md) and printing a link
+anyone with access to that server can open in the hosted
 EventExplorer. The capture is **not parsed** — the command checks the
-magic, signs an upload with the elog-access app, and PUTs the bytes
-straight to S3 on a presigned URL (the app never proxies them).
-Uploads are indexed by day, uploader, and cache name on the site's
-*Uploads* tab and expire with the bucket's 365-day retention; you can
-delete your own uploads there. One upload is capped at 2 GiB, and the
-S3 PUT requires full-tunnel VPN.
+magic, asks the server who you are (`GET <base>/whoami`), has it sign
+an upload, and PUTs the bytes straight to object storage on a
+presigned URL (the server never proxies them). Retention and deletion
+are up to the server. One upload is capped at 2 GiB. With no
+`uploads_url` the command fails with "no upload server is configured".
 
-Authentication is `metatron` (`metatron curl -a tseriesui
--provideE2eToken`): the CLI must be installed and able to fetch an
-E2E token, which is also what puts your username on the upload. The
-cache name defaults to the appliance-style prefix of the file name
-(`c174.ord001.dev-eventlog-…` → `c174.ord001.dev`); pass `--cache`
+API requests run through the site's `http_command` (default
+`curl -sS`), which is where a site adds authentication; the server's
+`whoami` answer is what puts your username on the upload. The PUT
+itself is plain `curl`. The cache name defaults to the
+appliance-style prefix of the file name
+(`c101.lab001.dev-eventlog-…` → `c101.lab001.dev`); pass `--cache`
 when the name doesn't lead with one. Given several files (a rolled
 set), each is uploaded in turn and one link loads the whole set.
 
 **Synopsis**
 
 ```bash
-elog_cli c658.sjc002.dev-20260918-085841-nginx.elog upload \
-    --note "repro for NCD-10342"
-elog_cli capture-*.elog.gz upload --cache c174.ord001.dev --open
+elog_cli c101.lab001.dev-20260918-085841-nginx.elog upload \
+    --note "stall repro"
+elog_cli capture-*.elog.gz upload --cache c102.lab002.dev --open
 ```
 
 **Output**
 
 ```
-Uploading c658.sjc002.dev-20260918-085841-nginx.elog (128.6 KiB) for c658.sjc002.dev…
-Uploaded as nickbanks@netflix.com:
-  https://ocdata.prod.netflix.net/elog-access/api/uploads/20261018-214836-3aece328/download#c658.sjc002.dev-20260918-085841-nginx.elog
+Uploading c101.lab001.dev-20260918-085841-nginx.elog (128.6 KiB) for c101.lab001.dev…
+Uploaded as alice@example.com:
+  https://share.example.com/api/uploads/20261018-214836-3aece328/download#c101.lab001.dev-20260918-085841-nginx.elog
 
 Open in EventExplorer:
-  https://ocdata.prod.netflix.net/eventexplorer/?file=https%3A%2F%2F…
+  https://share.example.com/eventexplorer/?file=https%3A%2F%2F…
 ```
 
 `--open` additionally opens the EventExplorer link in a browser
 (`open` on macOS, `xdg-open` elsewhere). The `download` URL 307s to a
-freshly-signed S3 GET on every fetch, so both links live as long as
+freshly-signed GET on every fetch, so both links live as long as
 the upload itself; the `#name` fragment is a display hint for the
 viewer, never sent to the server. The GUI's 🔗 Share dialog is the
 same flow with the view state (tab, session, time window, toggles)

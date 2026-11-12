@@ -11,10 +11,10 @@ Three rules worth repeating here:
  --all-targets --locked -- -D warnings`, and `cargo test --locked` must all be
  green locally. See
  [Pre-commit checks](AGENTS.md#pre-commit-checks-required).
-- **Commit directly to `master`.** This project is AI-owned; no pull
+- **Commit directly to `main`.** This project is AI-owned; no pull
  request, feature branch, or code review is required. See
  [Committing and shipping](AGENTS.md#committing-and-shipping).
-- **Never kill or drive Nick's EventExplorer.** Launch your own window,
+- **Never drive a GUI window you did not launch.** Launch your own window,
  keep that PID, and only screenshot/click/kill that process. See
  [Verifying GUI changes](AGENTS.md#verifying-gui-changes).
 

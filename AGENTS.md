@@ -30,6 +30,11 @@ is organized as a library (`src/lib.rs`) with the binaries as thin shims:
   same `EventExplorerApp`, runs in a browser tab. See the
   [Web target section](docs/architecture.md#web-target-wasm32) of
   architecture.md.
+- Site config — [`src/site.rs`](src/site.rs): optional share server,
+  symbol catalog, HTTP command, and firmware repo (`ELOG_*` env, site
+  file, or baked at build time; see
+  [`docs/site-config.md`](docs/site-config.md)). Unset keys turn those
+  features off, so never hard-code an endpoint.
 - Shared parser — the [`src/elog_parser/`](src/elog_parser) module tree
   (`constants.rs`, `names.rs`, `types.rs`, `bytes.rs`, `payload.rs`,
   `core.rs`, `io.rs`, `progress.rs`).
@@ -58,7 +63,7 @@ actual binary to test your changes.
   type-check-only pass (e.g. "just run cargo check"). Otherwise, build.
 - Only use debug (dev) mode when the user explicitly requests it
   (e.g. "build debug", "cargo build without release").
-- After landing changes (commit/push), always finish with a fresh
+- After committing changes, always finish with a fresh
   `cargo build --release` so `target/release/event_explorer` is the
   binary the user relaunches. Never leave the release binary stale
   behind the source.
@@ -138,42 +143,38 @@ cargo build --release
 ## Verifying GUI changes
 
 Don't ask the user to "re-launch and screenshot" after a GUI change.
-Launch **your own** `event_explorer`, keep its PID, and read a PNG of
-**that** window. Nick's already-open EventExplorer is off limits.
+Launch **your own** `event_explorer`, keep its PID, and capture a PNG of
+**that** window. Never drive a GUI window you did not launch — the
+user's already-open EventExplorer is off limits.
 
 **Never** `pkill` / `killall` / `kill -f` by name or WM_CLASS. Never
 screenshot, click, or scroll a window whose `_NET_WM_PID` is not the
 PID this session launched. There is often more than one EventExplorer
-running; `--match-class event-explorer` will hit Nick's.
+running, so matching by window class or title will hit someone else's.
 
-```bash
-~/.cursor/skills/screenshot-gui/scripts/capture.sh \
-    --launch 'target/release/event_explorer ~/logs/sample.elog' \
-    --wait 6 \
-    --keep-running \
-    --out /tmp/ee.png
-# capture.sh prints launched pid=… window=0x… — use only those.
-# then Read /tmp/ee.png
-# clicks/scrolls: --window-id from that line only
-# when done: kill <that pid> only
-```
+On X11 the flow is:
 
-See `~/.cursor/skills/screenshot-gui/SKILL.md` (Your own window only)
-for the full reference, including crop / `xwd2png.py` notes.
+1. Launch `target/release/event_explorer <capture>` in the background
+   and record its PID.
+2. Find that PID's window (`xdotool search --pid <pid>`, or match
+   `xprop _NET_WM_PID`).
+3. Capture only that window id (`import -window <id> /tmp/ee.png`, or
+   `xwd -id <id>` and convert), and send clicks/scrolls only to it.
+4. When done, kill that PID only.
 
 ## Committing and shipping
 
 This project is AI-owned. There is **no code review and no pull request
-requirement** — commit your work directly to `master` and push.
+requirement** — commit your work directly to `main` and push.
 
-- Commit to `master` and `git push` once the pre-commit checks above are
+- Commit to `main` and `git push` once the pre-commit checks above are
   green. Do not open a PR, do not create a feature branch, and do not
   wait for an approval that isn't coming.
 - Never `git checkout -b` / `git worktree add -b` for EventExplorer
   work, and never `gh pr create`, unless the user explicitly asks for a
   branch or PR in that message.
 - The checks are the gate. With no reviewer in the loop, an unverified
-  commit goes straight to `master` — run them.
+  commit goes straight to `main` — run them.
 - Keep commits focused: one logical change each, imperative subject.
 
 ## Release process
@@ -199,4 +200,6 @@ Full details and checklist in [`docs/releasing.md`](docs/releasing.md).
   event-id catalog.
 - [`docs/architecture.md`](docs/architecture.md) — codebase orientation,
   data flow, recipes.
+- [`docs/site-config.md`](docs/site-config.md) — site config keys and the
+  share-server / symbol-catalog APIs.
 - [`docs/releasing.md`](docs/releasing.md) — release checklist.

@@ -9,3 +9,4 @@ eventexplorer-*-web.zip
 
 # Unredacted screenshot originals kept locally for re-running obfuscation
 /docs/screenshots/.originals/
+/dist-ci/

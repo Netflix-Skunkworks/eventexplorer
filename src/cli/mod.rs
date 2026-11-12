@@ -312,7 +312,7 @@ pub fn run() {
         return;
     }
 
-    // `upload` ships the bytes to elog-access unopened — no parse at all.
+    // `upload` ships the bytes to the share server unopened — no parse at all.
     if command == "upload" {
         cmd_upload(&filepaths, &args[3..]);
         return;

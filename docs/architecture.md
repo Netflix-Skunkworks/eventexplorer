@@ -221,6 +221,7 @@ module root or a thin binary shim.
 | [`src/elog_parser/`](../src/elog_parser) | The parser and all shared on-disk data types. Used by both binaries and the wasm build. Submodules: `constants.rs` (`EVT_*`, flag, and size constants, plus the version-2 `PROVIDER_SIZE_V2` / `SCHEMA_ID_LEN` / `EVENTLOG_DECODE_*` / `DECODE_*` constants), `names.rs` (`event_name`, `if_event_name`, `pacing_cap_name`, `format_*_flags`, `hpts_wheel_event_name`, `hpts_bind_type_name`, `ella_relay_event_name`), `types.rs` (`Sessions`, `Event`, `EventPayload`, `FileInfo`, `Provider` (incl. `schema_*` fields), `StarsAggSample`, `CpuProfile`, `IfProfile`, `TcpSampleProfile`, `EllaProfile`, `SymbolHit`, `SchemaCapture`, `GenericEvent`, `HptsWheelEvent`/`HptsWheelPayload`, …), `bytes.rs` (little-endian readers + `format_if_addr`), `payload.rs` (`parse_payload`), `schema.rs` (`ProviderSchema` — the version-2 `EDB1` decode-blob reader/formatter, ported from the FreeBSD `decode.c`; `compute_schema_id`), `schema_validate.rs` (`ExpectedField`/`ExpectedEvent`, the `TCP_EXPECTED`/`IF_EXPECTED`/`CPU_EXPECTED`/`HPTS_EXPECTED`/`ELLA_EXPECTED`/`ELLA_RELAY_EXPECTED` tables, `validate_hardcoded_decoders`, and the `*_has_hardcoded_decoder` predicates), `hpts_wheel.rs` (`parse_hpts_wheel_payload` — the `hpts` provider's timing-wheel scheduler-trace decoder, ids 0-12), `ella.rs` (`ingest_ella_server` / `ingest_ella_relay`), `core.rs` (`ProviderKind`, `parse_elog_core`), `merge.rs` (`merge_captures` — folds per-file parse results into one continuous capture for a rolled set), `io.rs` (`open_file`, `fetch_remote`, `parse_elog`, `parse_elog_with_progress`, `parse_elogs`, `parse_elogs_with_progress`, `parse_elog_bytes_with_progress`; path/SSH loaders are desktop-only, the in-memory byte loader works on both targets), `progress.rs` (`LoadProgress`). The module root (`src/elog_parser.rs`) holds the parser unit tests. |
 | [`src/analysis/`](../src/analysis) | Higher-level analytics layered on top of the parser types (the parser never depends on this module). Submodules: `session.rs` (`SessionSummary`, `ConnParams`, `SessionAuxData`, `session_summaries`, `retain_plot_events`), `rate.rs` (`OverviewPlotData`, `extract_overview_data`, `compute_send_rate` / `compute_ack_rate` / `compute_ack_delivery_rate`), `limiter.rs` (`Limiter`, `LimiterSpan`, `LimiterSummary`, `build_limiter_spans`, `classify_bucket`), `goodput.rs` (`compute_kernel_goodput`, …), `cpu.rs` (per-process / CPU usage bins), `flame.rs` (`FlameNode`, `FlameFilter`, `FlameAggregation`, `build_flame_tree`, `fold_flame_tree`, `FlameDiff`, `build_flame_diff`), `functions.rs` (ASLR-independent per-binary rankings, stack drill-downs, and source-PC histograms), `samples.rs` (derives plottable time series from periodic provider profiles). Consumed by both the GUI and CLI. |
 | [`src/app/`](../src/app) | The egui GUI. `state.rs` holds the `EventExplorerApp` struct's main inherent `impl`; `update.rs` is the `eframe::App` impl; per-view files include `aggregate.rs`, `processes.rs`, `flame.rs`, `functions.rs`, `source.rs`, `cpustrip.rs`, `samples.rs`, and the provider-specific views. `functions.rs` renders process-scoped per-binary rankings and stack drill-downs in the Processes detail panel. Native `source.rs` prompts for a local ELF/debug file, validates its build id, resolves sample offsets through DWARF off the UI thread, applies source-prefix rewrites scoped by executable image (including the nginx ports expanded-source layout), persists accepted lookup choices as user-confirmed defaults for later captures, and renders virtualized annotated-source tabs; wasm retains an unavailable state. Leaf helpers live in `colors.rs`, `file_dialog.rs` (native in-app filesystem browser), `format.rs`, `plot.rs`, `plot_layout.rs`, and `sidebar.rs`. The module root (`src/app.rs`) holds `EventExplorerApp`, `Tab`, and `View`. Expensive CPU-profile analysis shares the `Arc<CpuProfile>` with worker threads. Filesystem and process features are gated `#[cfg(not(target_arch = "wasm32"))]`. |
+| [`src/site.rs`](../src/site.rs) | Site config: the optional share server, symbol catalog, HTTP command, and firmware repo a deployment points at, looked up from `ELOG_*` env, the site file, then build-time values from [`build.rs`](../build.rs). See [site-config.md](site-config.md). |
 | [`src/cli.rs`](../src/cli.rs) | Thin `fn main` shim for the `elog_cli` binary; calls `event_explorer::cli::run()`. |
 | [`src/cli/`](../src/cli) | `elog_cli` command logic, exposed as the library module `cli` (native-only, gated by `native-bins`). `mod.rs` holds `run` (argv dispatch), `print_usage`, and `parse_session_id`; `cmd_*` handlers are grouped into `summary.rs`, `rtt.rs` (incl. `pearson_r`/`percentile`/`compute_pairwise`/`analyze_session`), `goodput.rs` (incl. the `gpsim` state machine), `events.rs`, `interfaces.rs`, `flame.rs`, `stars.rs`, `percore.rs`, `hpts.rs` (`cmd_hpts_events`/`cmd_hpts_lateness`/`cmd_hpts_gaps` — the `hpts` timing-wheel-trace subcommands, version 2 captures only), `ella.rs` (`cmd_ella` / `cmd_ella_stats` / `cmd_ella_events`). |
 
@@ -612,7 +613,7 @@ together:
   paths resolve against the page origin; absolute URLs are subject
   to the target server's CORS policy. The displayed file name is the
   last path segment of the URL. When `../logs/` is an nginx/Apache
-  autoindex of `.elog` files (the ocadev `public_html` layout), the
+  autoindex of `.elog` files (a dev host's `public_html` layout), the
   splash also fetches that listing — plus one subdirectory — and
   turns each file into a one-click open (`?file=../logs/…`). If the
   fetch fails or the HTML is not a listing, the section is omitted.
@@ -697,45 +698,45 @@ Implementation:
 - Share copy uses a real `<textarea>` and `<button>` in
   `index.html`. The button calls `navigator.clipboard.writeText` when
   that API exists (HTTPS / localhost) and `document.execCommand('copy')`
-  otherwise, which is what ocadev's plain HTTP needs. Canvas/egui text
+  otherwise, which is what a plain-HTTP dev host needs. Canvas/egui text
   cannot feed the browser clipboard: eframe-0.27's copy path is gated
   on `--cfg=web_sys_unstable_apis`, which doesn't compile against
   web-sys 0.3.91.
 
-### Sharing local captures: elog-access uploads
+### Sharing local captures: uploads
 
 The Share dialog also covers captures that have no URL yet — a
-picker load on web, or any desktop load — by uploading them to
-elog-access's Uploads service first ([`src/elog_parser/uploads.rs`](../src/elog_parser/uploads.rs);
-the server side is sde-oc-batch `sde_elog_access.uploads`). The
-protocol mirrors symbol packs: the app server only signs, so capture
-bytes never pass through it.
+picker load on web, or any desktop load — by uploading them to the
+share server named by the [site config](site-config.md) first
+([`src/elog_parser/uploads.rs`](../src/elog_parser/uploads.rs)). The
+server only signs, so capture bytes never pass through it.
+[site-config.md](site-config.md#upload-server-api) has the full
+request/response contract.
 
-1. `POST <base>/api/uploads` `{cache_name, file_name,
-   content_length, note}` returns `{upload_id, url, method,
-   headers}` — a presigned S3 PUT, pinned to method/key/content-type/
-   length/`If-None-Match`.
-2. The client PUTs the bytes straight to S3. Native shells out to
-   `curl --progress-bar -T` (stderr fragments feed the permille
+1. `POST <base>` `{cache_name, file_name, content_length, note}`
+   returns `{upload_id, url, method, headers}` — a presigned
+   object-store PUT, which the server can pin to method/key/
+   content-type/length/`If-None-Match`.
+2. The client PUTs the bytes straight to storage. Native shells out
+   to `curl --progress-bar -T` (stderr fragments feed the permille
    bar); the browser sends the picked `File` as an XHR blob, which
    streams without copying through wasm memory.
-3. `POST <base>/api/uploads/<id>/complete` checks the object and its
-   elog header, moves the pending record into the upload index, and
-   returns it.
+3. `POST <base>/<id>/complete` checks the object and its elog
+   header, indexes the upload, and returns its record.
 
-Auth per target: native runs `metatron curl -a tseriesui
--provideE2eToken` (the server names the uploader from the initial
-E2E identity — same pattern as the pack fetch's metatron hop); the
-browser POSTs same-origin `/elog-access/api/uploads` with SSO
-cookies (`withCredentials`). The finished upload's canonical URL is
-`<ocdata>/elog-access/api/uploads/<id>/download` — a 307 that
-re-signs an S3 GET per fetch, so share links live for the bucket's
-365-day retention instead of expiring with a presign. The original
+Auth per target: native API calls run through the site's
+`http_command` (default `curl -sS`, given curl-style `-X`/`-H`/`-d`
+arguments and the URL), so a site wraps them with its own
+credentials; the browser calls the base with the hosting page's
+session/cookies (`withCredentials`). The finished upload's canonical
+URL is `<share_url>/<id>/download` — a 307 that re-signs a GET per
+fetch, so share links live as long as the upload instead of
+expiring with a presign. The original
 file name rides in a `#fragment` (display-only, stripped by the
 browser before the request); `url_file_name` / `url_file_label`
 prefer it over the path tail.
 
-- **Desktop**: the tab-bar 🔗 button (no longer wasm-gated) opens
+- **Desktop**: the tab-bar 🔗 button (shown when `uploads_url` is set) opens
   `show_share_dialog`, an egui `Window` with the cache-name
   (pre-filled from `MACHINE_INFO.hostname`, else the
   `infer_cache_name` filename rule) and note fields. The upload runs
@@ -757,12 +758,14 @@ prefer it over the path tail.
   reloads the uploaded capture.
 - **CLI**: `elog_cli <file>... upload [--cache NAME] [--note TEXT]
   [--open]` (`src/cli/upload.rs`) is the headless variant — magic
-  check, metatron whoami probe, per-file upload with a stderr
+  check, `whoami` probe, per-file upload with a stderr
   progress bar, and the printed permalink; dispatched before the
   full parse like `sizes`.
-- Endpoints default to prod (`tseriesui…:7004` native, ocdata for
-  canonical links and the EventExplorer page); `ELOG_UPLOADS_URL`
-  and `ELOG_EVENTEXPLORER_PAGE` override them for previews.
+- Endpoints come from the site config: `uploads_url` for the API,
+  `share_url` (default `uploads_url`) for canonical links, and
+  `eventexplorer_page` for the page links open. With no
+  `uploads_url` the desktop button is hidden and the web dialog
+  shows only the view link.
 
 The relevant `web-sys`/`js-sys` features are declared directly in
 [`Cargo.toml`](../Cargo.toml)'s `target.cfg(target_arch = "wasm32")`

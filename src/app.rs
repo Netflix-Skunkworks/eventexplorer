@@ -438,7 +438,7 @@ pub struct EventExplorerApp {
     #[cfg(target_arch = "wasm32")]
     splash_url: String,
     /// Web splash: captures listed from `../logs/` when that sibling
-    /// directory is served as an autoindex (ocadev `~/public_html/logs`).
+    /// directory is served as an autoindex (a dev host's `~/public_html/logs`).
     #[cfg(target_arch = "wasm32")]
     hosted_logs: HostedLogs,
     #[cfg(target_arch = "wasm32")]

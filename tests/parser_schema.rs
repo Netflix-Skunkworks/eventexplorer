@@ -115,7 +115,7 @@ fn if_sample_bytes_and_packets_merge_into_one_record() {
     assert_eq!((if2[0].ipackets, if2[0].opackets), (5, 4));
 }
 
-/// NCD-10070: on a schema new enough to carry the appended other_ibytes/
+/// On a schema new enough to carry the appended other_ibytes/
 /// obytes/ipackets/opackets fields, the parser must use that direct
 /// counter as-is, not silently re-derive it as total - tcp - udp. The
 /// fixture sets other to a value the derive formula would NOT produce,
