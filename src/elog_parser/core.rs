@@ -1954,6 +1954,10 @@ fn parse_elog_from(
     cpu_profile.samples.par_sort_unstable_by_key(|s| s.ts);
     #[cfg(target_arch = "wasm32")]
     cpu_profile.samples.sort_unstable_by_key(|s| s.ts);
+    cpu_profile.sample_rates = detect_sample_rates(
+        &cpu_profile.samples,
+        cpu_profile.kernel.as_ref().map(|k| k.sample_hz()),
+    );
     // SYMBOL_RANGE / USER_SYMBOL_RANGE dedup uses the deterministic
     // alias rule in `sort_symbol_ranges` (see its doc comment).
     // SYMBOL_RANGE events are emitted by elog(1) in the order it

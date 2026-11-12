@@ -82,6 +82,10 @@ pub struct CpuUsageBins {
     /// idle-skipping kernels because every cell satisfies
     /// `busy == total` by construction.
     pub peak_samples_per_bin: u32,
+    /// Per-bin denominator when the sampler rate changes inside the
+    /// capture (see [`SampleRateSegment`]); empty when every bin uses
+    /// [`Self::peak_samples_per_bin`].
+    pub peak_per_bin: Vec<f32>,
     /// Per-bin frequency-scaling multiplier in `(0.0, 1.0]`, for the
     /// optional "scale CPU usage by frequency" display mode. `None`
     /// when no sample in the capture carries a valid `freq_mhz`
@@ -135,6 +139,11 @@ impl CpuUsageBins {
             }
         }
         self.reference_freq_mhz = Some(new_ref);
+    }
+
+    /// Samples per CPU in `bin` when 100% busy.
+    pub fn peak(&self, bin: usize) -> f64 {
+        bin_peak(&self.peak_per_bin, self.peak_samples_per_bin, bin)
     }
 
     /// Convenience: number of CPUs (length of [`Self::cpu_ids`]).
@@ -205,11 +214,11 @@ impl CpuUsageBins {
     /// `ncpu` on idle-skipping captures because every cell had
     /// `busy == total`.
     pub fn cpus_busy(&self, bin: usize) -> f64 {
-        if self.peak_samples_per_bin == 0 {
+        let denom = self.peak(bin);
+        if denom <= 0.0 {
             return 0.0;
         }
         let busy_sum = self.aggregate_busy(bin) as f64;
-        let denom = self.peak_samples_per_bin as f64;
         let raw = busy_sum / denom;
         let cap = self.cpu_ids.len() as f64;
         if raw > cap {
@@ -224,11 +233,12 @@ impl CpuUsageBins {
     /// `[0.0, 1.0]`. See [`Self::cpus_busy`] for why we use
     /// `peak_samples_per_bin` instead of `busy / total`.
     pub fn cpu_busy_fraction(&self, bin: usize, cpu_idx: usize) -> f64 {
-        if self.peak_samples_per_bin == 0 {
+        let denom = self.peak(bin);
+        if denom <= 0.0 {
             return 0.0;
         }
         let (busy, _total) = self.cell(bin, cpu_idx);
-        let f = busy as f64 / self.peak_samples_per_bin as f64;
+        let f = busy as f64 / denom;
         if f > 1.0 {
             1.0
         } else {
@@ -246,7 +256,7 @@ impl CpuUsageBins {
 /// 20, 50, 100, 200, 500 ms, …) so on-screen tick spacing stays
 /// readable at any zoom.
 ///
-/// `kernel_hz` is the actual sampler frequency -- [`KernelInfo::sample_hz`],
+/// `rates` is the sampler-rate timeline -- [`CpuProfile::sample_rates`],
 /// NOT the raw `hz` field (which is the kernel tick rate, not the hwpmc
 /// sampler rate on captures where `pmchz` is set independently) -- used
 /// to derive [`CpuUsageBins::peak_samples_per_bin`] as `hz * bin_us`
@@ -255,11 +265,13 @@ impl CpuUsageBins {
 /// biased upward by 10-25%+ at typical GUI zoom levels, worse the
 /// finer the bins, because it's an order statistic over
 /// `bin_count * ncpu` noisy cells rather than a physical constant).
-/// Pass `None` for captures that pre-date `KERNEL_INFO` carrying
-/// `hz`, which falls back to the empirical max.
+/// Pass an empty slice for captures that pre-date `KERNEL_INFO` carrying
+/// `hz`, which falls back to the empirical max. With more than one
+/// segment each bin gets its own denominator in
+/// [`CpuUsageBins::peak_per_bin`].
 ///
 /// Idle samples (the per-CPU idle thread running) are still counted
-/// in `total` so callers that lack `kernel_hz` still get a usable
+/// in `total` so callers that lack a rate still get a usable
 /// (if biased) denominator.
 ///
 /// O(samples) — single pass, no sort. The samples vector is already
@@ -269,10 +281,10 @@ impl CpuUsageBins {
 pub fn compute_cpu_usage_bins(
     samples: &[CpuStackSample],
     target_bins: usize,
-    kernel_hz: Option<u32>,
+    rates: &[SampleRateSegment],
     rated_freq_mhz: Option<u16>,
 ) -> CpuUsageBins {
-    compute_cpu_usage_bins_for_cpus(samples, target_bins, kernel_hz, rated_freq_mhz, &[])
+    compute_cpu_usage_bins_for_cpus(samples, target_bins, rates, rated_freq_mhz, &[])
 }
 
 /// CPU usage for an allowlist (empty means all CPUs). Keep the input
@@ -280,7 +292,7 @@ pub fn compute_cpu_usage_bins(
 pub fn compute_cpu_usage_bins_for_cpus(
     samples: &[CpuStackSample],
     target_bins: usize,
-    kernel_hz: Option<u32>,
+    rates: &[SampleRateSegment],
     rated_freq_mhz: Option<u16>,
     cpus: &[u16],
 ) -> CpuUsageBins {
@@ -322,8 +334,9 @@ pub fn compute_cpu_usage_bins_for_cpus(
     // period keeps zoomed-in views pinned at the sampler's real
     // resolution instead of fabricating sub-sample-period noise. Only
     // applies when we know the real rate; the empirical-max fallback
-    // path (no kernel_hz) has no period to floor against.
-    if let Some(hz) = kernel_hz.filter(|&hz| hz > 0) {
+    // path (no rate) has no period to floor against. With several rates
+    // the slowest one sets the floor.
+    if let Some(hz) = rates.iter().map(|r| r.hz).filter(|&hz| hz > 0).min() {
         let period_us = nice_bin_us((1_000_000.0 / hz as f64).max(1.0));
         bin_us = bin_us.max(period_us);
     }
@@ -356,6 +369,7 @@ pub fn compute_cpu_usage_bins_for_cpus(
             busy: Vec::new(),
             total: Vec::new(),
             peak_samples_per_bin: 0,
+            peak_per_bin: Vec::new(),
             freq_scale: None,
             reference_freq_mhz: None,
         };
@@ -451,7 +465,17 @@ pub fn compute_cpu_usage_bins_for_cpus(
     // for a genuinely saturated CPU. Round to the nearest sample
     // rather than truncating so a bin width that's an exact multiple
     // of the sample period doesn't get shorted by integer division.
-    let peak_samples_per_bin = match kernel_hz {
+    let peak_per_bin: Vec<f32> = if rates.len() > 1 {
+        (0..bin_count)
+            .map(|b| {
+                let lo = t0 + b as u64 * bin_us;
+                expected_samples(rates, lo, lo + bin_us) as f32
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
+    let peak_samples_per_bin = match rates.iter().map(|r| r.hz).max() {
         Some(hz) if hz > 0 => (((hz as u64) * bin_us + 500_000) / 1_000_000)
             .max(1)
             .min(u32::MAX as u64) as u32,
@@ -468,9 +492,16 @@ pub fn compute_cpu_usage_bins_for_cpus(
         busy,
         total,
         peak_samples_per_bin,
+        peak_per_bin,
         freq_scale,
         reference_freq_mhz,
     }
+}
+
+fn bin_peak(peak_per_bin: &[f32], peak_samples_per_bin: u32, bin: usize) -> f64 {
+    peak_per_bin
+        .get(bin)
+        .map_or(peak_samples_per_bin as f64, |&p| p as f64)
 }
 
 /// Per-process binned CPU-sample histogram, the data behind the
@@ -516,6 +547,8 @@ pub struct ProcessUsageBins {
     /// "CPUs busy" so the strip's y-axis matches the CPUs-busy
     /// strip's y-axis exactly.
     pub peak_samples_per_bin: u32,
+    /// Same `peak_per_bin` as the matching `CpuUsageBins`.
+    pub peak_per_bin: Vec<f32>,
     /// Copy of the matching `CpuUsageBins::freq_scale`, so the "Scale
     /// by CPU frequency" toggle applies uniformly to this strip too —
     /// it's per-bin, not per-pid, so every process layer in a bin
@@ -555,23 +588,22 @@ impl ProcessUsageBins {
     /// when out of range or when the capture is effectively empty
     /// (no peak rate to normalise against).
     pub fn cpus_busy_by_pid(&self, bin: usize, process_idx: usize) -> f64 {
-        if self.peak_samples_per_bin == 0
-            || bin >= self.bin_count
-            || process_idx >= self.processes.len()
-        {
+        let denom = bin_peak(&self.peak_per_bin, self.peak_samples_per_bin, bin);
+        if denom <= 0.0 || bin >= self.bin_count || process_idx >= self.processes.len() {
             return 0.0;
         }
         let count = self.processes[process_idx].counts_per_bin[bin] as f64;
-        count / self.peak_samples_per_bin as f64
+        count / denom
     }
 
     /// "CPUs busy" for the catch-all "Other" layer. Returns 0.0
     /// when out of range or when the capture is empty.
     pub fn cpus_busy_other(&self, bin: usize) -> f64 {
-        if self.peak_samples_per_bin == 0 || bin >= self.bin_count {
+        let denom = bin_peak(&self.peak_per_bin, self.peak_samples_per_bin, bin);
+        if denom <= 0.0 || bin >= self.bin_count {
             return 0.0;
         }
-        self.other_per_bin[bin] as f64 / self.peak_samples_per_bin as f64
+        self.other_per_bin[bin] as f64 / denom
     }
 
     /// Frequency-scaling multiplier for `bin` (see
@@ -683,6 +715,7 @@ pub fn compute_process_usage_bins(
         processes,
         other_per_bin,
         peak_samples_per_bin: grid.peak_samples_per_bin,
+        peak_per_bin: grid.peak_per_bin.clone(),
         freq_scale: grid.freq_scale.clone(),
     }
 }
@@ -755,6 +788,7 @@ pub fn compute_kernel_user_usage_bins(
         ],
         other_per_bin: vec![0u32; grid.bin_count],
         peak_samples_per_bin: grid.peak_samples_per_bin,
+        peak_per_bin: grid.peak_per_bin.clone(),
         freq_scale: grid.freq_scale.clone(),
     }
 }
@@ -1313,7 +1347,8 @@ mod tests {
         for i in 9_900..10_000 {
             samples.push(freq_sample(i as u64 * 1_000, 2200));
         }
-        let bins = compute_cpu_usage_bins(&samples, 1, Some(1000), None);
+        let bins =
+            compute_cpu_usage_bins(&samples, 1, &SampleRateSegment::uniform(Some(1000)), None);
         assert_eq!(bins.reference_freq_mhz, Some(2200));
         let mean = (9_900.0 * 1500.0 + 100.0 * 2200.0) / 10_000.0;
         let expected = (mean / 2200.0) as f32;
@@ -1335,7 +1370,8 @@ mod tests {
         for i in 9_995..10_000 {
             samples.push(freq_sample(i as u64 * 1_000, 3400));
         }
-        let bins = compute_cpu_usage_bins(&samples, 1, Some(1000), None);
+        let bins =
+            compute_cpu_usage_bins(&samples, 1, &SampleRateSegment::uniform(Some(1000)), None);
         assert_eq!(bins.reference_freq_mhz, Some(2800));
         assert!((bins.freq_scale_for(0) - 1.0).abs() < 1e-4);
     }
@@ -1345,7 +1381,8 @@ mod tests {
         let samples: Vec<_> = (0..100)
             .map(|i| freq_sample(i as u64 * 1_000, 1500))
             .collect();
-        let mut bins = compute_cpu_usage_bins(&samples, 1, Some(1000), None);
+        let mut bins =
+            compute_cpu_usage_bins(&samples, 1, &SampleRateSegment::uniform(Some(1000)), None);
         assert_eq!(bins.reference_freq_mhz, Some(1500));
         assert!((bins.freq_scale_for(0) - 1.0).abs() < 1e-4);
         bins.retarget_freq_reference(3000);
@@ -1360,7 +1397,12 @@ mod tests {
         let samples: Vec<_> = (0..100)
             .map(|i| freq_sample(i as u64 * 1_000, 1500))
             .collect();
-        let bins = compute_cpu_usage_bins(&samples, 1, Some(1000), Some(3000));
+        let bins = compute_cpu_usage_bins(
+            &samples,
+            1,
+            &SampleRateSegment::uniform(Some(1000)),
+            Some(3000),
+        );
         assert_eq!(bins.reference_freq_mhz, Some(3000));
         assert!((bins.freq_scale_for(0) - 0.5).abs() < 1e-4);
     }
@@ -1396,7 +1438,8 @@ mod tests {
                 if i % 4 == 0 { CPU_SAMPLE_FLAG_IDLE } else { 0 },
             ));
         }
-        let grid = compute_cpu_usage_bins(&samples, 20, Some(1000), None);
+        let grid =
+            compute_cpu_usage_bins(&samples, 20, &SampleRateSegment::uniform(Some(1000)), None);
         let ku = compute_kernel_user_usage_bins(&samples, &grid);
         assert_eq!(ku.bin_count, grid.bin_count);
         assert_eq!(ku.bin_us, grid.bin_us);
@@ -1422,9 +1465,11 @@ mod tests {
                 busy_sample(i as u64 * 1_000, 0, flags)
             })
             .collect();
-        let full = compute_cpu_usage_bins(&samples, 20, Some(1000), None);
+        let full =
+            compute_cpu_usage_bins(&samples, 20, &SampleRateSegment::uniform(Some(1000)), None);
         let slice = &samples[4_000..5_000];
-        let zoomed = compute_cpu_usage_bins(slice, 20, Some(1000), None);
+        let zoomed =
+            compute_cpu_usage_bins(slice, 20, &SampleRateSegment::uniform(Some(1000)), None);
         assert!(zoomed.bin_us < full.bin_us);
         let ku = compute_kernel_user_usage_bins(slice, &zoomed);
         assert_eq!(ku.bin_us, zoomed.bin_us);

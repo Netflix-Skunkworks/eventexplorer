@@ -31,6 +31,7 @@ CpuUsageBins {
         1,
     ],
     peak_samples_per_bin: 50,
+    peak_per_bin: [],
     freq_scale: None,
     reference_freq_mhz: None,
 }

@@ -107,8 +107,9 @@ pub fn cmd_percore(profile: &CpuProfile, capture_start_us: u64, args: &[String])
     }
 
     let hz = profile.kernel.as_ref().map(|k| k.sample_hz());
+    let rates = &profile.rate_timeline();
     let rated = profile.kernel.as_ref().and_then(|k| k.rated_freq_mhz());
-    let bins = compute_cpu_usage_bins(&windowed, 1, hz, rated);
+    let bins = compute_cpu_usage_bins(&windowed, 1, rates, rated);
     if bins.is_empty() {
         eprintln!("No CPU samples to bin.");
         return;
@@ -189,16 +190,28 @@ pub fn cmd_percore(profile: &CpuProfile, capture_start_us: u64, args: &[String])
     }
 
     if let Some(n) = timeline_bins {
-        let tl = compute_cpu_usage_bins(&windowed, n, hz, rated);
+        let tl = compute_cpu_usage_bins(&windowed, n, rates, rated);
         println!();
         println!(
             "=== Aggregate CPUs-busy timeline ({} bins x {} ms, {} cores total, \
-             peak_samples_per_bin={}, nominal_hz={:?}{}) ===",
+             peak_samples_per_bin={}, nominal_hz={:?}{}{}) ===",
             tl.bin_count,
             tl.bin_us as f64 / 1000.0,
             tl.ncpus(),
             tl.peak_samples_per_bin,
             hz,
+            if rates.iter().any(|r| r.detected) {
+                let segs: Vec<String> = rates
+                    .iter()
+                    .map(|r| {
+                        let t = r.start_us.saturating_sub(capture_start_us) as f64 / 1e6;
+                        format!("{}@{t:.0}s", r.hz)
+                    })
+                    .collect();
+                format!(", detected_hz={}", segs.join(","))
+            } else {
+                String::new()
+            },
             if freq_scale {
                 format!(", freq_scale ref_mhz={:?}", tl.reference_freq_mhz)
             } else {

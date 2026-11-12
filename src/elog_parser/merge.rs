@@ -344,6 +344,7 @@ fn merge_cpu(dst: &mut CpuProfile, src: CpuProfile) {
         proc_execs,
         proc_titles,
         kernel,
+        sample_rates: _,
         linker_files,
         symbols,
         user_files,
@@ -409,6 +410,8 @@ fn merge_cpu(dst: &mut CpuProfile, src: CpuProfile) {
         entries.sort_unstable_by_key(|t| t.ts);
     }
     dst.overflow_dropped += overflow_dropped;
+    dst.sample_rates =
+        detect_sample_rates(&dst.samples, dst.kernel.as_ref().map(|k| k.sample_hz()));
 }
 
 fn merge_if(dst: &mut IfProfile, src: IfProfile) {

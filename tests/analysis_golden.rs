@@ -107,8 +107,7 @@ fn send_ack_rate_golden() {
 #[test]
 fn cpu_usage_bins_golden() {
     let (_sessions, cpu) = parse();
-    let hz = cpu.kernel.as_ref().map(|k| k.sample_hz());
     let rated = cpu.kernel.as_ref().and_then(|k| k.rated_freq_mhz());
-    let bins = compute_cpu_usage_bins(&cpu.samples, 8, hz, rated);
+    let bins = compute_cpu_usage_bins(&cpu.samples, 8, &cpu.sample_rates, rated);
     check_golden("analysis/cpu_usage_bins.txt", &format!("{bins:#?}\n"));
 }

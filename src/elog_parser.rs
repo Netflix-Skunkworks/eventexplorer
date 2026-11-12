@@ -34,6 +34,8 @@ mod hpts_wheel;
 pub use hpts_wheel::*;
 mod ella;
 pub use ella::*;
+mod sample_rate;
+pub use sample_rate::*;
 mod nginx;
 pub use nginx::*;
 mod mem;
@@ -433,7 +435,7 @@ mod tests {
         ];
         // target_bins = 4, raw bin width = 9000/4 = 2250 us → round
         // up to 5000 us (next 1/2/5 × 10^k step).
-        let bins = compute_cpu_usage_bins(&samples, 4, None, None);
+        let bins = compute_cpu_usage_bins(&samples, 4, &[], None);
         assert_eq!(bins.bin_us, 5_000);
         // duration / bin_us rounded up == 2 bins.
         assert_eq!(bins.bin_count, 2);
@@ -481,7 +483,7 @@ mod tests {
         assert_eq!(bins.cpus_busy(99), 0.0);
 
         // Empty input produces an empty bins struct.
-        let empty = compute_cpu_usage_bins(&[], 100, None, None);
+        let empty = compute_cpu_usage_bins(&[], 100, &[], None);
         assert!(empty.is_empty());
         assert_eq!(empty.peak_samples_per_bin, 0);
         assert_eq!(empty.cpus_busy(0), 0.0);
@@ -522,7 +524,7 @@ mod tests {
             mk(0, 1),
             mk(2_000, 1),
         ];
-        let bins = compute_cpu_usage_bins(&samples, 2, None, None);
+        let bins = compute_cpu_usage_bins(&samples, 2, &[], None);
         // Expect bin_us = 5000 (raw 5000 rounds up to itself) and
         // 2 bins covering [0, 10000).
         assert_eq!(bins.bin_count, 2);
@@ -574,7 +576,8 @@ mod tests {
 
         // With the real hz on record, the outlier bin can't drag down
         // every other bin's reading.
-        let bins = compute_cpu_usage_bins(&samples, 5, Some(1000), None);
+        let bins =
+            compute_cpu_usage_bins(&samples, 5, &SampleRateSegment::uniform(Some(1000)), None);
         assert_eq!(bins.bin_us, 10_000);
         assert_eq!(bins.peak_samples_per_bin, 10);
         for bin in [0, 1, 3, 4] {
@@ -588,7 +591,7 @@ mod tests {
         // denominator for the whole timeline, so CPU 0's genuinely
         // fully-busy bins read 10/12 ≈ 83% instead of 100% -- this is
         // the bug.
-        let legacy = compute_cpu_usage_bins(&samples, 5, None, None);
+        let legacy = compute_cpu_usage_bins(&samples, 5, &[], None);
         assert_eq!(legacy.peak_samples_per_bin, 12);
         assert!((legacy.cpu_busy_fraction(0, 0) - 10.0 / 12.0).abs() < 1e-9);
     }

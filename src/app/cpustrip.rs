@@ -390,7 +390,7 @@ impl CpuBusyStripView {
             let samples = &self.profile.samples;
             let lo_idx = samples.partition_point(|s| s.ts < lo_us);
             let hi_idx = samples.partition_point(|s| s.ts <= hi_us);
-            let hz = self.profile.kernel.as_ref().map(|k| k.sample_hz());
+            let rates = &self.profile.rate_timeline();
             let rated = self
                 .profile
                 .kernel
@@ -399,7 +399,7 @@ impl CpuBusyStripView {
             let mut rebinned = analysis::compute_cpu_usage_bins_for_cpus(
                 &samples[lo_idx..hi_idx],
                 self.target_bins,
-                hz,
+                rates,
                 rated,
                 &self.cpus,
             );
@@ -520,9 +520,9 @@ impl CpuUsagePanel {
         // replaces these bins when the gear slider differs.
         const TOP_PROCESSES_N: usize = 10;
 
-        let hz = profile.kernel.as_ref().map(|k| k.sample_hz());
+        let rates = &profile.rate_timeline();
         let rated = profile.kernel.as_ref().and_then(|k| k.rated_freq_mhz());
-        let cpu_bins = analysis::compute_cpu_usage_bins(&profile.samples, STACK_BINS, hz, rated);
+        let cpu_bins = analysis::compute_cpu_usage_bins(&profile.samples, STACK_BINS, rates, rated);
         if cpu_bins.is_empty() {
             return None;
         }
@@ -600,12 +600,12 @@ impl CpuUsagePanel {
             return;
         }
         let profile = Arc::clone(&self.cpu_strip.profile);
-        let hz = profile.kernel.as_ref().map(|k| k.sample_hz());
+        let rates = &profile.rate_timeline();
         let rated = self.reference_freq_mhz;
         let cpu_bins = analysis::compute_cpu_usage_bins_for_cpus(
             &profile.samples,
             target_bins,
-            hz,
+            rates,
             rated,
             cpus,
         );
@@ -1540,7 +1540,7 @@ impl TopProcessesStripView {
             let samples = &self.profile.samples;
             let lo_idx = samples.partition_point(|s| s.ts < lo_us);
             let hi_idx = samples.partition_point(|s| s.ts <= hi_us);
-            let hz = self.profile.kernel.as_ref().map(|k| k.sample_hz());
+            let rates = &self.profile.rate_timeline();
             let rated = self
                 .profile
                 .kernel
@@ -1549,7 +1549,7 @@ impl TopProcessesStripView {
             let mut grid = analysis::compute_cpu_usage_bins_for_cpus(
                 &samples[lo_idx..hi_idx],
                 self.target_bins,
-                hz,
+                rates,
                 rated,
                 &self.cpus,
             );

@@ -723,7 +723,18 @@ pub fn run() {
             // ncpu and the actual sample rate, one key per line.
             if let Some(k) = &cpu_profile.kernel {
                 println!("ncpus={}", k.ncpus);
-                println!("sample_hz={}", k.sample_hz());
+                match cpu_profile.sample_rates.as_slice() {
+                    [one] => println!("sample_hz={}", one.hz),
+                    _ => println!("sample_hz={}", k.sample_hz()),
+                }
+                if cpu_profile.sample_rates.len() > 1 {
+                    let segs: Vec<String> = cpu_profile
+                        .sample_rates
+                        .iter()
+                        .map(|r| format!("{}@{}", r.hz, r.start_us))
+                        .collect();
+                    println!("sample_hz_segments={}", segs.join(","));
+                }
             } else {
                 println!("ncpus=0");
                 println!("sample_hz=0");

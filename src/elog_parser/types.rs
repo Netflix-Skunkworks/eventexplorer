@@ -2038,6 +2038,10 @@ pub struct CpuProfile {
     /// identity-maps note in `elog_parser/core.rs`). `None` when the
     /// capture is malformed or pre-dates the event.
     pub kernel: Option<KernelInfo>,
+    /// Sampler rate over the capture, measured from the samples (see
+    /// [`detect_sample_rates`]). Use this, not `kernel.sample_hz()`, as
+    /// the busy-CPU denominator.
+    pub sample_rates: Vec<SampleRateSegment>,
     /// `file_id -> LinkerFile` lookup populated from `LINKER_FILE`
     /// events. Upsert (see the identity-maps note in
     /// `elog_parser/core.rs`): a repeat sighting of `file_id` replaces
@@ -2142,6 +2146,16 @@ fn comm_from_exe_or_thread<'a>(
 }
 
 impl CpuProfile {
+    /// [`Self::sample_rates`], or the `CPU_INFO` rate for a profile
+    /// that was built without running detection.
+    pub fn rate_timeline(&self) -> Vec<SampleRateSegment> {
+        if self.sample_rates.is_empty() {
+            SampleRateSegment::uniform(self.kernel.as_ref().map(|k| k.sample_hz()))
+        } else {
+            self.sample_rates.clone()
+        }
+    }
+
     /// The pack id referenced for a linker `file_id`, when one was
     /// emitted and the file has no in-file ranges (in-file wins).
     pub fn pack_ref_for_linker(&self, file_id: u32) -> Option<&str> {

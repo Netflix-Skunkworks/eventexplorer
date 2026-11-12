@@ -1282,7 +1282,18 @@ pub fn show_flame_info_button(ui: &mut egui::Ui, cpu_profile: &CpuProfile, packs
 
                     if let Some(k) = &cpu_profile.kernel {
                         if k.sample_hz() > 0 {
-                            let mut rate = format!("{} Hz", fmt_count(k.sample_hz() as u64));
+                            let rates = &cpu_profile.sample_rates;
+                            let mut rate = if rates.iter().any(|r| r.detected) {
+                                let hz: Vec<String> =
+                                    rates.iter().map(|r| fmt_count(r.hz as u64)).collect();
+                                format!(
+                                    "{} Hz (from samples; CPU_INFO {} Hz)",
+                                    hz.join(" → "),
+                                    fmt_count(k.sample_hz() as u64)
+                                )
+                            } else {
+                                format!("{} Hz", fmt_count(k.sample_hz() as u64))
+                            };
                             if k.pmchz > 0 && k.pmchz != k.hz {
                                 rate.push_str(&format!(" · tick {} Hz", fmt_count(k.hz as u64)));
                             }
