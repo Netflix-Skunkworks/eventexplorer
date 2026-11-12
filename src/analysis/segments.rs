@@ -733,7 +733,7 @@ s_1582.cmfv,274680,275000,October 6th 2026,12:52:51.822 PM,12:52:51.800 PM,22 ms
 
     #[test]
     fn test_real_origin_segments_file() {
-        let path = "/home/nickbanks/Downloads/origin-segments-2557826-2087026450.csv";
+        let path = "/home/user/Downloads/origin-segments-2557826-2087026450.csv";
         if let Ok(content) = std::fs::read_to_string(path) {
             let (region, rows) = parse_origin_segments_csv(&content);
             assert_eq!(region, "us-east-1");
@@ -783,7 +783,7 @@ s_morning.cmfv,1000000,1000000,October 7th 2026,1:26:00.000 AM,1:26:00.000 AM,0 
 
     #[test]
     fn confetti_segment_files_and_the_35k_window() {
-        let dir = "/home/nickbanks/logs/stars-confetti-2";
+        let dir = "/home/user/logs/stars-confetti-2";
         let oct6 = format!("{dir}/origin-segments-2555267-397374817.csv");
         let oct7 = format!("{dir}/origin-segments-2555267-397374817-2.csv");
         let (Ok(oct6_csv), Ok(oct7_csv)) = (

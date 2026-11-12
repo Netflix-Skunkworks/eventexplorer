@@ -56,10 +56,16 @@ struct PortRepo {
     tag: fn(&str) -> Option<String>,
 }
 
-pub(crate) const FIRMWARE_HOST: &str = "github.netflix.net";
-const FIRMWARE_OWNER: &str = "corp";
-const FIRMWARE_REPO: &str = "ocadev-ocafirmware";
-const FIRMWARE_REF: &str = "master";
+/// The site's firmware repo ([`crate::site::Key::FirmwareRepo`]).
+/// Unset leaves firmware paths unmapped.
+fn firmware_repo() -> Option<&'static crate::site::Repo> {
+    crate::site::firmware_repo()
+}
+
+/// Whether `blob` points into the firmware repo.
+pub(crate) fn is_firmware_blob(blob: &GithubBlob) -> bool {
+    firmware_repo().is_some_and(|r| (r.host, r.owner, r.repo) == (blob.host, blob.owner, blob.repo))
+}
 
 const PORTS: &[PortRepo] = &[
     PortRepo {
@@ -206,20 +212,21 @@ fn with_commit(git_ref: String, commit_id: &str) -> String {
     }
 }
 
-fn firmware_blob(path: String, commit_id: &str, firmware_commit: &str) -> GithubBlob {
+fn firmware_blob(path: String, commit_id: &str, firmware_commit: &str) -> Option<GithubBlob> {
+    let repo = firmware_repo()?;
     let fallback = firmware_commit.trim();
     let fallback = if fallback.is_empty() {
-        FIRMWARE_REF.to_string()
+        repo.git_ref.to_string()
     } else {
         fallback.to_string()
     };
-    GithubBlob {
-        host: FIRMWARE_HOST,
-        owner: FIRMWARE_OWNER,
-        repo: FIRMWARE_REPO,
+    Some(GithubBlob {
+        host: repo.host,
+        owner: repo.owner,
+        repo: repo.repo,
         git_ref: with_commit(fallback, commit_id),
         path,
-    }
+    })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -250,10 +257,14 @@ pub(crate) fn firmware_source_note(version: &str) -> Option<String> {
             ident.commit
         )),
         Some(_) => None,
-        None if version.trim().is_empty() => {
-            Some("No kernel ident in this capture. Showing master.".to_string())
+        None => {
+            let git_ref = firmware_repo().map_or("HEAD", |r| r.git_ref);
+            Some(if version.trim().is_empty() {
+                format!("No kernel ident in this capture. Showing {git_ref}.")
+            } else {
+                format!("No firmware commit in this kernel ident. Showing {git_ref}.")
+            })
         }
-        None => Some("No firmware commit in this kernel ident. Showing master.".to_string()),
     }
 }
 
@@ -412,7 +423,7 @@ fn netflix_ports_blob(
     if path.is_empty() {
         return None;
     }
-    Some(firmware_blob(path, commit_id, firmware_commit))
+    firmware_blob(path, commit_id, firmware_commit)
 }
 
 fn committed_port_tree(
@@ -431,7 +442,10 @@ fn committed_port_tree(
         return None;
     }
     let path = normalize_relative(&parts[ports_at..]).join("/");
-    (!path.is_empty()).then(|| firmware_blob(path, commit_id, firmware_commit))
+    if path.is_empty() {
+        return None;
+    }
+    firmware_blob(path, commit_id, firmware_commit)
 }
 
 fn goroot_blob(parts: &[&str], commit_id: &str) -> Option<GithubBlob> {
@@ -470,7 +484,7 @@ pub(crate) fn resolve_github_blob(
         // walks back out of it with "..". Collapse before the blob path.
         let path = normalize_relative(&parts[freebsd..]).join("/");
         if !path.is_empty() {
-            return Some(firmware_blob(path, commit_id, firmware_commit));
+            return firmware_blob(path, commit_id, firmware_commit);
         }
     }
     if let Some(blob) = committed_port_tree(&parts, commit_id, firmware_commit) {
@@ -490,7 +504,7 @@ pub(crate) fn resolve_github_blob(
         if !relative.is_empty() {
             let mut path = vec!["FreeBSD".to_string(), "include".to_string()];
             path.extend(relative);
-            return Some(firmware_blob(path.join("/"), commit_id, firmware_commit));
+            return firmware_blob(path.join("/"), commit_id, firmware_commit);
         }
     }
     None
@@ -662,13 +676,16 @@ fn port_files_entries(category: &str, port: &str, git_ref: &str) -> Option<Vec<(
             };
         }
     }
+    let repo = firmware_repo()?;
     let api = format!(
-        "/repos/{FIRMWARE_OWNER}/{FIRMWARE_REPO}/contents/{}",
+        "/repos/{}/{}/contents/{}",
+        repo.owner,
+        repo.repo,
         encode_path(&format!("ports/{category}/{port}/files"))
     );
     let query = format!("{api}?ref={}", encode_component(git_ref));
     let output = gh_api(
-        FIRMWARE_HOST,
+        repo.host,
         &[&query, "-H", "Accept: application/vnd.github+json"],
     )
     .ok()?;
@@ -708,18 +725,18 @@ pub(crate) fn resolve_vendored_port(
 ) -> Option<GithubBlob> {
     let parts = path_components(pathname);
     let work = port_work(&parts)?;
-    let git_ref = firmware_blob(String::new(), commit_id, firmware_commit).git_ref;
+    let git_ref = firmware_blob(String::new(), commit_id, firmware_commit)?.git_ref;
     let entries = port_files_entries(work.category, work.port, &git_ref)?;
     let borrowed: Vec<(&str, bool)> = entries
         .iter()
         .map(|(name, is_dir)| (name.as_str(), *is_dir))
         .collect();
     let suffix = vendored_files_suffix(work.port, work.dist, &work.relative, &borrowed)?;
-    Some(firmware_blob(
+    firmware_blob(
         format!("ports/{}/{}/{}", work.category, work.port, suffix),
         commit_id,
         firmware_commit,
-    ))
+    )
 }
 
 /// Downloaded blob text kept under the user cache dir. Newest 50 by last use.
@@ -879,22 +896,22 @@ mod tests {
     #[test]
     fn firmware_build_path_maps_onto_the_tree() {
         let blob = resolve_github_blob(
-            "/mnt/carson/worker/workspace/OCADEV-firmware-master-2/FreeBSD/sys/amd64/include/atomic.h",
+            "/build/workspace/firmware-2/FreeBSD/sys/amd64/include/atomic.h",
             "",
             "",
         )
         .unwrap();
-        assert_eq!(blob.host, "github.netflix.net");
-        assert_eq!(blob.owner, "corp");
-        assert_eq!(blob.repo, "ocadev-ocafirmware");
-        assert_eq!(blob.git_ref, "master");
+        assert_eq!(blob.host, "git.example.com");
+        assert_eq!(blob.owner, "acme");
+        assert_eq!(blob.repo, "firmware");
+        assert_eq!(blob.git_ref, "main");
         assert_eq!(blob.path, "FreeBSD/sys/amd64/include/atomic.h");
     }
 
     #[test]
     fn kernel_objdir_path_collapses_to_the_tree() {
         let blob = resolve_github_blob(
-            "/home/nickbanks/ocafw/.obj/nano.nflx/home/nickbanks/ocafw/FreeBSD/amd64.amd64/sys/RED1/../../../../../../../../../FreeBSD/sys/netinet/tcp_lro.c",
+            "/home/user/ocafw/.obj/nano.nflx/home/user/ocafw/FreeBSD/amd64.amd64/sys/RED1/../../../../../../../../../FreeBSD/sys/netinet/tcp_lro.c",
             "",
             "d9885eb13475",
         )
@@ -923,9 +940,9 @@ mod tests {
             "a36b8d97a3a7",
         )
         .unwrap();
-        assert_eq!(nginx.host, "github.netflix.net");
-        assert_eq!(nginx.owner, "corp");
-        assert_eq!(nginx.repo, "ocadev-ocafirmware");
+        assert_eq!(nginx.host, "git.example.com");
+        assert_eq!(nginx.owner, "acme");
+        assert_eq!(nginx.repo, "firmware");
         assert_eq!(nginx.git_ref, "a36b8d97a3a7");
         assert_eq!(
             nginx.path,
@@ -938,10 +955,10 @@ mod tests {
             "",
         )
         .unwrap();
-        assert_eq!(module.host, "github.netflix.net");
-        assert_eq!(module.owner, "corp");
-        assert_eq!(module.repo, "ocadev-ocafirmware");
-        assert_eq!(module.git_ref, "master");
+        assert_eq!(module.host, "git.example.com");
+        assert_eq!(module.owner, "acme");
+        assert_eq!(module.repo, "firmware");
+        assert_eq!(module.git_ref, "main");
         assert_eq!(
             module.path,
             "ports/netflix/nginx/files/nginx/nflx_health_stats/nflx_health_stats_module.c"
@@ -953,9 +970,9 @@ mod tests {
             "",
         )
         .unwrap();
-        assert_eq!(download.host, "github.netflix.net");
-        assert_eq!(download.owner, "corp");
-        assert_eq!(download.repo, "ocadev-ocafirmware");
+        assert_eq!(download.host, "git.example.com");
+        assert_eq!(download.owner, "acme");
+        assert_eq!(download.repo, "firmware");
         assert_eq!(download.path, "ports/netflix/download_helper/files/curl.c");
     }
 
@@ -1024,13 +1041,13 @@ mod tests {
     #[test]
     fn checked_out_port_files_map_into_the_firmware_tree() {
         let blob = resolve_github_blob(
-            "/home/nickbanks/ocafw/ports/devel/gdb/files/kgdb/kgdb.c",
+            "/home/user/ocafw/ports/devel/gdb/files/kgdb/kgdb.c",
             "",
             "a36b8d97a3a7",
         )
         .unwrap();
-        assert_eq!(blob.host, "github.netflix.net");
-        assert_eq!(blob.repo, "ocadev-ocafirmware");
+        assert_eq!(blob.host, "git.example.com");
+        assert_eq!(blob.repo, "firmware");
         assert_eq!(blob.git_ref, "a36b8d97a3a7");
         assert_eq!(blob.path, "ports/devel/gdb/files/kgdb/kgdb.c");
     }
@@ -1082,7 +1099,7 @@ mod tests {
         let commit = firmware_commit_from_kernel_version(version).unwrap();
         assert_eq!(commit, "a36b8d97a3a7");
         let blob = resolve_github_blob(
-            "/mnt/carson/worker/workspace/OCADEV-firmware-master-2/FreeBSD/sys/netinet/tcp_stacks/ngen.c",
+            "/build/workspace/firmware-2/FreeBSD/sys/netinet/tcp_stacks/ngen.c",
             "",
             &commit,
         )
@@ -1091,7 +1108,7 @@ mod tests {
         assert!(firmware_commit_from_kernel_version("FreeBSD 16.0-CURRENT").is_none());
         assert!(firmware_source_note("FreeBSD 16.0-CURRENT")
             .unwrap()
-            .contains("master"));
+            .contains("main"));
     }
 
     #[test]
@@ -1127,9 +1144,9 @@ mod tests {
     #[test]
     fn source_cache_key_changes_with_the_path() {
         let blob = GithubBlob {
-            host: "github.netflix.net",
-            owner: "corp",
-            repo: "ocadev-ocafirmware",
+            host: "git.example.com",
+            owner: "acme",
+            repo: "firmware",
             git_ref: "abc".to_string(),
             path: "FreeBSD/sys/netinet/tcp_lro.c".to_string(),
         };

@@ -34,37 +34,11 @@
 #[allow(unused_imports)]
 use super::*;
 
-/// Default symbol-catalog base URL (elog-access on the tseriesui app).
-/// `<base>/<build_id>` 307-redirects to a one-hour presigned S3 GET.
-#[cfg(not(target_arch = "wasm32"))]
-pub const DEFAULT_SYMBOLS_BASE_URL: &str =
-    "https://tseriesui.cluster.us-east-1.prod.cloud.netflix.net:7004/elog-access/api/symbols";
-
-/// Browser default: the same-origin route ocdata fronts elog-access
-/// under. SSO cookies ride along, the 307 to S3 passes CORS (the
-/// bucket allows the ocdata origin), and a non-ocdata host just 404s.
-#[cfg(target_arch = "wasm32")]
-pub const DEFAULT_SYMBOLS_BASE_URL: &str = "/elog-access/api/symbols";
-
-/// Metatron application the catalog endpoint lives behind.
-const METATRON_APP: &str = "tseriesui";
-
-/// Environment variable overriding [`DEFAULT_SYMBOLS_BASE_URL`].
-pub const SYMBOLS_URL_ENV: &str = "ELOG_SYMBOLS_URL";
-
-/// Base URL for pack fetches: `$ELOG_SYMBOLS_URL` or the default.
-#[cfg(not(target_arch = "wasm32"))]
-pub fn symbols_base_url() -> String {
-    std::env::var(SYMBOLS_URL_ENV)
-        .ok()
-        .filter(|v| !v.is_empty())
-        .unwrap_or_else(|| DEFAULT_SYMBOLS_BASE_URL.to_string())
-}
-
-/// Base URL for pack fetches on web: the same-origin default.
-#[cfg(target_arch = "wasm32")]
-pub fn symbols_base_url() -> String {
-    DEFAULT_SYMBOLS_BASE_URL.to_string()
+/// Symbol catalog base from the site config ([`site::Key::SymbolsUrl`]).
+/// `<base>/<build_id>` returns the gzip'd pack, directly or via redirect.
+/// Unset leaves pack refs unresolved.
+pub fn symbols_base_url() -> Option<String> {
+    crate::site::value(crate::site::Key::SymbolsUrl)
 }
 
 /// Concurrent catalog GETs. Each pack is one small object, so the
@@ -555,13 +529,12 @@ fn curl_get(url: &str) -> RemotePack {
     RemotePack::Error
 }
 
-/// Fetch one pack by build-id. The default (mesh) endpoint
-/// 307-redirects to a presigned S3 URL; `metatron curl` does not
-/// follow redirects, so the Location is read from its verbose headers
-/// and the presigned GET goes through plain curl (the URL carries its
-/// own signature). A non-default base (a local mirror, a test server)
-/// is plain HTTP and fetched directly. A cached hit or a fresh 404
-/// returns without touching the network.
+/// Fetch one pack by build-id. Plain curl follows redirects itself.
+/// A site [`HttpCommand`](crate::site::Key::HttpCommand) may not, so
+/// its verbose headers are read for the status and `Location`, and the
+/// redirect target (a presigned URL that carries its own signature)
+/// goes through plain curl. A cached hit or a fresh 404 returns without
+/// touching the network.
 #[cfg(not(target_arch = "wasm32"))]
 fn fetch_pack(pack_id: &str, base_url: &str) -> FetchedPack {
     let root = cache_root();
@@ -608,16 +581,11 @@ fn fetch_pack(pack_id: &str, base_url: &str) -> FetchedPack {
 
 #[cfg(not(target_arch = "wasm32"))]
 fn fetch_pack_remote(pack_id: &str, base_url: &str) -> RemotePack {
-    use std::process::Command;
-
     let url = format!("{}/{}", base_url.trim_end_matches('/'), pack_id);
-    if base_url != DEFAULT_SYMBOLS_BASE_URL {
+    if crate::site::http_command().is_none() {
         return curl_get(&url);
     }
-    let Ok(out) = Command::new("metatron")
-        .args(["curl", "-a", METATRON_APP, "-v", &url])
-        .output()
-    else {
+    let Ok(out) = crate::site::api_command().args(["-v", &url]).output() else {
         return RemotePack::Error;
     };
     let text = format!(
@@ -645,10 +613,10 @@ fn fetch_pack(_pack_id: &str, _base_url: &str) -> FetchedPack {
     }
 }
 
-/// Browser catalog GET. XHR follows the 307 to the presigned S3 URL
-/// on its own; the endpoint and the bucket both carry CORS for the
-/// ocdata origin. Credentials ride along so the SSO session on the
-/// hosting page authorizes the elog-access hop.
+/// Browser catalog GET. XHR follows a redirect on its own, so the
+/// catalog and whatever it redirects to need CORS for the hosting
+/// origin. Credentials ride along so the page's session authorizes
+/// the catalog request.
 #[cfg(target_arch = "wasm32")]
 pub async fn fetch_pack_wasm(pack_id: &str, base_url: &str) -> FetchedPack {
     use wasm_bindgen::JsCast;

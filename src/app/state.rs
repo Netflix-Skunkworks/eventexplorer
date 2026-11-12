@@ -811,12 +811,14 @@ impl EventExplorerApp {
     #[cfg(not(target_arch = "wasm32"))]
     fn start_pack_fetch(&mut self) {
         let ids = elog_parser::pack_ids_missing_ranges(&self.cpu_profile);
+        let Some(base) = elog_parser::symbols_base_url() else {
+            return;
+        };
         if ids.is_empty() {
             return;
         }
         let total = ids.len();
         let gen = self.pack_fetch_gen;
-        let base = elog_parser::symbols_base_url();
         let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let cancel_worker = std::sync::Arc::clone(&cancel);
         let (tx, rx) = mpsc::channel();
@@ -843,17 +845,19 @@ impl EventExplorerApp {
         });
     }
 
-    /// Browser variant: one XHR per id (the endpoint 307s to S3;
-    /// both carry CORS for the hosting origin). No disk cache on web.
+    /// Browser variant: one XHR per id (the catalog and its redirect
+    /// target carry CORS for the hosting origin). No disk cache on web.
     #[cfg(target_arch = "wasm32")]
     fn start_pack_fetch(&mut self) {
         let ids = elog_parser::pack_ids_missing_ranges(&self.cpu_profile);
+        let Some(base) = elog_parser::symbols_base_url() else {
+            return;
+        };
         if ids.is_empty() {
             return;
         }
         let total = ids.len();
         let gen = self.pack_fetch_gen;
-        let base = elog_parser::symbols_base_url();
         let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let (tx, rx) = mpsc::channel();
         let remaining = std::rc::Rc::new(std::cell::Cell::new(total));
@@ -1011,22 +1015,19 @@ impl EventExplorerApp {
     #[cfg(not(target_arch = "wasm32"))]
     fn install_baseline_symbol_packs(profile: &mut CpuProfile, progress: &LoadProgress) {
         let missing = elog_parser::pack_ids_missing_ranges(profile);
-        if missing.is_empty() {
+        let base = elog_parser::symbols_base_url();
+        let Some(base) = base.filter(|_| !missing.is_empty()) else {
             progress.set_window(0, 1000);
             progress.store_permille(1000);
             return;
-        }
+        };
         let total = missing.len() as u32;
         progress.set_status(format!("Fetching {total} symbol packs…"));
         progress.set_window(900, 1000);
         progress.store_permille(0);
-        elog_parser::install_packs_reporting(
-            profile,
-            &elog_parser::symbols_base_url(),
-            &|done, total| {
-                progress.store_permille(done.saturating_mul(1000) / total.max(1));
-            },
-        );
+        elog_parser::install_packs_reporting(profile, &base, &|done, total| {
+            progress.store_permille(done.saturating_mul(1000) / total.max(1));
+        });
         progress.set_window(0, 1000);
         progress.store_permille(1000);
     }
@@ -1036,16 +1037,16 @@ impl EventExplorerApp {
     #[cfg(target_arch = "wasm32")]
     async fn install_baseline_symbol_packs(profile: &mut CpuProfile, progress: &LoadProgress) {
         let ids = elog_parser::pack_ids_missing_ranges(profile);
-        if ids.is_empty() {
+        let base = elog_parser::symbols_base_url();
+        let Some(base) = base.filter(|_| !ids.is_empty()) else {
             progress.set_window(0, 1000);
             progress.store_permille(1000);
             return;
-        }
+        };
         let total = ids.len() as u32;
         progress.set_status(format!("Fetching {total} symbol packs…"));
         progress.set_window(900, 1000);
         progress.store_permille(0);
-        let base = elog_parser::symbols_base_url();
         let mut bytes = rustc_hash::FxHashMap::default();
         for (i, id) in ids.into_iter().enumerate() {
             let fetched = elog_parser::fetch_pack_wasm(&id, &base).await;
@@ -1837,7 +1838,7 @@ impl EventExplorerApp {
 
     /// The cache name offered as the upload default: the capture's
     /// own `MACHINE_INFO` hostname when it has one, else the
-    /// elog-access filename rule.
+    /// share server's filename rule.
     pub(crate) fn default_cache_name(&self) -> String {
         if let Some(host) = self
             .file_info
@@ -1870,7 +1871,7 @@ impl EventExplorerApp {
     /// (`#ee-share-overlay` in `index.html`) so the browser owns Copy,
     /// Ctrl+C, and the context menu. When the capture came from the
     /// file picker there is no link to show; the overlay instead
-    /// offers an upload to elog-access, and a finished upload swaps
+    /// offers an upload to the share server, and a finished upload swaps
     /// in the canonical link.
     #[cfg(target_arch = "wasm32")]
     pub(crate) fn show_share_popup(&mut self, ctx: &egui::Context) {
@@ -1919,7 +1920,7 @@ impl EventExplorerApp {
             }
         }
         let url = self.current_share_url().unwrap_or_default();
-        let has_file_url = !self.loaded_file_urls.is_empty();
+        let has_file_url = !self.loaded_file_urls.is_empty() || !elog_parser::uploads_configured();
         let view = if has_file_url {
             None
         } else {
@@ -2016,7 +2017,7 @@ impl EventExplorerApp {
     }
 
     /// Render the Share dialog (desktop). The 🔗 button opens it;
-    /// "Upload & Copy Link" pushes the capture to elog-access on a
+    /// "Upload & Copy Link" pushes the capture to the share server on a
     /// background thread and lands the permalink on the clipboard.
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn show_share_dialog(&mut self, ctx: &egui::Context) {
@@ -2046,10 +2047,10 @@ impl EventExplorerApp {
             .open(&mut open)
             .show(ctx, |ui| {
                 ui.set_width(max_w);
-                ui.label(
-                    "Upload to elog-access (365-day retention) to get a link anyone can open. \
-                     The bytes go straight to S3 — full-tunnel VPN required.",
-                );
+                ui.label("Upload to the share server to get a link anyone with access can open.");
+                if let Some(note) = elog_parser::upload_note() {
+                    ui.label(note);
+                }
                 ui.add_space(6.0);
 
                 // What will be uploaded.
@@ -2080,7 +2081,7 @@ impl EventExplorerApp {
                     ui.add(
                         egui::TextEdit::singleline(&mut form.cache_name)
                             .desired_width(f32::INFINITY)
-                            .hint_text("c658.sjc002.dev"),
+                            .hint_text("host name"),
                     );
                 });
                 ui.horizontal(|ui| {

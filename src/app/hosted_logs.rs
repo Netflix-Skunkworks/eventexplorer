@@ -420,9 +420,9 @@ mod tests {
     use super::*;
 
     const NGINX_LISTING: &str = r#"<html>
-<head><title>Index of /~nickbanks/logs/</title></head>
+<head><title>Index of /~user/logs/</title></head>
 <body>
-<h1>Index of /~nickbanks/logs/</h1><hr><pre><a href="../">../</a>
+<h1>Index of /~user/logs/</h1><hr><pre><a href="../">../</a>
 <a href="ella-scale/">ella-scale/</a>                                        23-Sep-2026 14:11                   -
 <a href="ella-c190.nyc005.ix.elog.gz">ella-c190.nyc005.ix.elog.gz</a>                        16-Sep-2026 13:00            95045753
 <a href="spreadout-to-cores-96-2026-09-23T155934Z.elog.gz">spreadout-to-cores-96-2026-09-23T155934Z.elog.gz</a>   23-Sep-2026 17:37           518623067

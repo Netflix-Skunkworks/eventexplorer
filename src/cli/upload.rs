@@ -117,8 +117,8 @@ pub fn cmd_upload(files: &[String], args: &[String]) {
         });
     }
 
-    // Sign-in probe: fails fast with the actionable error (metatron
-    // missing, E2E identity absent) before any bytes move.
+    // Sign-in probe: fails fast with the actionable error (no server
+    // configured, HTTP command missing, not signed in) before any bytes move.
     let (user, max_bytes) = match uploads_whoami() {
         Ok(w) => w,
         Err(e) => {

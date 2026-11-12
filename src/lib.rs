@@ -23,6 +23,7 @@
 pub mod analysis;
 pub mod app;
 pub mod elog_parser;
+pub mod site;
 
 // CLI command logic lives in `src/cli/`; the `elog_cli` binary (`src/cli.rs`)
 // is a thin shim over `cli::run`. Native-only (uses std::process, filesystem

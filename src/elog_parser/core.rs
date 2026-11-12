@@ -2553,7 +2553,7 @@ mod tests {
             buf[off..off + n].copy_from_slice(s.as_bytes());
         }
         write_cstr(&mut payload, 0, 37, "uuid-here");
-        write_cstr(&mut payload, 37, 64, "c658.sjc002.dev");
+        write_cstr(&mut payload, 37, 64, "c101.lab001.dev");
         write_cstr(&mut payload, 101, 32, "15.0-CURRENT");
         write_cstr(&mut payload, 133, 256, "FreeBSD 15.0");
         write_cstr(&mut payload, 389, 128, "2026Q2.1");
@@ -2565,7 +2565,7 @@ mod tests {
 
         let mi = parse_machine_info(&payload).expect("parse");
         assert_eq!(mi.hostuuid, "uuid-here");
-        assert_eq!(mi.hostname, "c658.sjc002.dev");
+        assert_eq!(mi.hostname, "c101.lab001.dev");
         assert_eq!(mi.firmware_version, "2026Q2.1");
         assert_eq!(mi.ncpu, 4);
     }

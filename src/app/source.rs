@@ -1120,7 +1120,7 @@ fn load_github_source(
                 continue;
             }
         };
-        let note = (blob.host == super::github_source::FIRMWARE_HOST)
+        let note = super::github_source::is_firmware_blob(&blob)
             .then(|| ref_note.clone())
             .flatten();
         let lines: Vec<String> = text.lines().map(str::to_owned).collect();
@@ -2781,8 +2781,8 @@ mod tests {
     #[test]
     fn source_link_label_starts_at_freebsd_sys() {
         let dwarf =
-            "/mnt/carson/worker/workspace/OCADEV-firmware-master-2/FreeBSD/sys/netinet/tcp_lro.c";
-        let url = "https://github.netflix.net/corp/ocadev-ocafirmware/blob/abc/FreeBSD/sys/netinet/tcp_lro.c";
+            "/build/workspace/firmware-2/FreeBSD/sys/netinet/tcp_lro.c";
+        let url = "https://git.example.com/acme/firmware/blob/abc/FreeBSD/sys/netinet/tcp_lro.c";
         assert_eq!(
             source_link_label(dwarf, url),
             "FreeBSD/sys/netinet/tcp_lro.c"
@@ -2798,7 +2798,7 @@ mod tests {
             nginx
         );
         let wrkdirs = "/wrkdirs/usr/ports/netflix/nginx/work-default/nginx-1.31.4/src/event/modules/ngx_kqueue_module.c";
-        let nginx_url = "https://github.netflix.net/corp/ocadev-ocafirmware/blob/36d625ca270c/ports/netflix/nginx/files/nginx/src/event/modules/ngx_kqueue_module.c";
+        let nginx_url = "https://git.example.com/acme/firmware/blob/36d625ca270c/ports/netflix/nginx/files/nginx/src/event/modules/ngx_kqueue_module.c";
         assert_eq!(
             source_link_label(wrkdirs, nginx_url),
             "ports/netflix/nginx/files/nginx/src/event/modules/ngx_kqueue_module.c"

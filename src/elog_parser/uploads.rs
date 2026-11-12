@@ -12,108 +12,67 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! One-off capture uploads to elog-access's Uploads sharing service
-//! (sde-oc-batch `sde_elog_access.uploads`, elog-access ≥ 0.23.0).
+//! One-off capture uploads to a share server, for links anyone with
+//! access to that server can open.
 //!
-//! The service hands out a presigned S3 PUT, so capture bytes never
-//! pass through the app server: `POST /api/uploads` signs, the client
-//! PUTs straight to S3, and `POST /api/uploads/<id>/complete` checks
-//! the header and indexes the upload. A finished upload is reachable
-//! at `/api/uploads/<id>/download`, a 307 to a freshly-signed S3 GET,
-//! which is what EventExplorer share links embed as `?file=`.
+//! The server hands out a presigned object-store PUT, so capture bytes
+//! never pass through it: `POST <base>` signs, the client PUTs straight
+//! to the store, and `POST <base>/<id>/complete` checks the header and
+//! indexes the upload. A finished upload is reachable at
+//! `<base>/<id>/download`, a 307 to a freshly-signed GET, which is what
+//! EventExplorer share links embed as `?file=`. `docs/site-config.md`
+//! has the full API contract.
 //!
-//! Native reaches the API with `metatron curl -provideE2eToken` (the
-//! server names the uploader from the initial E2E identity); the
-//! browser build calls the same-origin route with SSO cookies. The
-//! S3 PUT itself is unsigned-credentialed in both cases (the URL
-//! carries its own signature) and needs full-tunnel VPN off-cloud.
+//! The base comes from the site config. Native requests run through
+//! [`site::Key::HttpCommand`] (default `curl -sS`), so a site can add
+//! its own authentication; the browser build calls the base with the
+//! hosting page's cookies. The PUT itself is plain curl/XHR (the URL
+//! carries its own signature).
 
 #[allow(unused_imports)]
 use super::*;
+use crate::site;
 #[cfg(not(target_arch = "wasm32"))]
 use std::sync::Arc;
 
 /// Every fallible upload call fails with a human-readable message.
 type UploadResult<T> = std::result::Result<T, String>;
 
-/// Production uploads API on the tseriesui mesh endpoint (native).
-#[cfg(not(target_arch = "wasm32"))]
-pub const DEFAULT_UPLOADS_BASE_URL: &str =
-    "https://tseriesui.cluster.us-east-1.prod.cloud.netflix.net:7004/elog-access/api/uploads";
-
-/// Browser default: the same-origin route the hosting page fronts
-/// elog-access under (ocdata, or a tseriesui preview). SSO cookies
-/// ride along, as with symbol packs.
-#[cfg(target_arch = "wasm32")]
-pub const DEFAULT_UPLOADS_BASE_URL: &str = "/elog-access/api/uploads";
-
-/// Canonical host share links point at: the SSO'd browser front door.
-/// Each fetch of a `/download` URL re-signs, so links live as long as
-/// the upload itself (the bucket's 365-day expiry).
-pub const DEFAULT_CANONICAL_BASE_URL: &str =
-    "https://ocdata.prod.netflix.net/elog-access/api/uploads";
-pub const DEFAULT_EVENTEXPLORER_PAGE: &str = "https://ocdata.prod.netflix.net/eventexplorer/";
-
-/// Environment variables overriding the prod endpoints (testing
-/// against previews / local servers). Native only.
-pub const UPLOADS_URL_ENV: &str = "ELOG_UPLOADS_URL";
-pub const EVENTEXPLORER_PAGE_ENV: &str = "ELOG_EVENTEXPLORER_PAGE";
-
 /// Matches the server's `MAX_UPLOAD_BYTES` (one presigned PUT, no
 /// multipart). A server-side change wins: the start call 400s.
 pub const MAX_UPLOAD_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 
-#[cfg(not(target_arch = "wasm32"))]
-const METATRON_APP: &str = "tseriesui";
-
-/// Uploads API base: `$ELOG_UPLOADS_URL` or the per-target default.
-#[cfg(not(target_arch = "wasm32"))]
-pub fn uploads_base_url() -> String {
-    std::env::var(UPLOADS_URL_ENV)
-        .ok()
-        .filter(|v| !v.is_empty())
-        .unwrap_or_else(|| DEFAULT_UPLOADS_BASE_URL.to_string())
+/// Uploads API base from the site config ([`site::Key::UploadsUrl`]).
+/// Unset turns capture sharing off.
+pub fn uploads_base_url() -> Option<String> {
+    site::value(site::Key::UploadsUrl)
 }
 
-/// Uploads API base on web: the same-origin default.
-#[cfg(target_arch = "wasm32")]
-pub fn uploads_base_url() -> String {
-    DEFAULT_UPLOADS_BASE_URL.to_string()
+/// Whether this build can upload captures for sharing.
+pub fn uploads_configured() -> bool {
+    uploads_base_url().is_some()
 }
 
-/// Base share links embed in `?file=`: the ocdata front door, or the
-/// overridden API base when testing.
-#[cfg(not(target_arch = "wasm32"))]
+/// Base share links embed in `?file=`: [`site::Key::ShareUrl`], else
+/// the uploads API base.
 pub fn canonical_base_url() -> String {
-    std::env::var(UPLOADS_URL_ENV)
-        .ok()
-        .filter(|v| !v.is_empty())
-        .unwrap_or_else(|| DEFAULT_CANONICAL_BASE_URL.to_string())
+    site::value(site::Key::ShareUrl)
+        .or_else(uploads_base_url)
+        .unwrap_or_default()
 }
 
-/// Canonical base on web: ocdata (absolute, so the link works from
-/// anywhere the recipient can reach SSO).
-#[cfg(target_arch = "wasm32")]
-pub fn canonical_base_url() -> String {
-    DEFAULT_CANONICAL_BASE_URL.to_string()
-}
-
-/// EventExplorer page share links open.
-#[cfg(not(target_arch = "wasm32"))]
+/// EventExplorer page share links open. Unset leaves a bare query
+/// string, which the hosting page resolves against itself.
 pub fn eventexplorer_page_url() -> String {
-    std::env::var(EVENTEXPLORER_PAGE_ENV)
-        .ok()
-        .filter(|v| !v.is_empty())
-        .unwrap_or_else(|| DEFAULT_EVENTEXPLORER_PAGE.to_string())
+    site::value(site::Key::EventExplorerPage).unwrap_or_default()
 }
 
-/// EventExplorer page share links open (web).
-#[cfg(target_arch = "wasm32")]
-pub fn eventexplorer_page_url() -> String {
-    DEFAULT_EVENTEXPLORER_PAGE.to_string()
+/// Site-specific share-dialog text ([`site::Key::UploadNote`]).
+pub fn upload_note() -> Option<String> {
+    site::value(site::Key::UploadNote)
 }
 
-/// The long-lived GET link for one upload: a 307 to a presigned S3
+/// The long-lived GET link for one upload: a 307 to a presigned
 /// GET, re-signed per fetch. `#name` is a display hint only — never
 /// sent to the server; `url_file_name` prefers it over the path tail.
 pub fn canonical_download_url(upload_id: &str, file_name: &str) -> String {
@@ -171,9 +130,9 @@ pub fn query_escape(s: &str) -> String {
     out
 }
 
-/// Cache-name inference from a capture file name, ported from
-/// elog-access's `uploads.js`: `c174.ord001.dev-eventlog-…` yields
-/// `c174.ord001.dev`. Empty when the name doesn't lead with an
+/// Cache-name inference from a capture file name, matching the
+/// share server's own rule: `c102.lab002.dev-eventlog-…` yields
+/// `c102.lab002.dev`. Empty when the name doesn't lead with an
 /// appliance-style prefix.
 pub fn infer_cache_name(file_name: &str) -> String {
     let name = file_name.rsplit('/').next().unwrap_or(file_name);
@@ -365,17 +324,14 @@ fn parse_complete_response(text: &str) -> UploadResult<UploadRecord> {
 }
 
 // ---------------------------------------------------------------------------
-// Native transport: metatron for the API, plain curl for the S3 PUT.
+// Native transport: the site HTTP command for the API, plain curl for the PUT.
 // ---------------------------------------------------------------------------
 
 #[cfg(not(target_arch = "wasm32"))]
-fn metatron_json(method: &str, path: &str, body: Option<&str>) -> UploadResult<String> {
-    let url = format!("{}{}", uploads_base_url().trim_end_matches('/'), path);
-    let mut cmd = std::process::Command::new("metatron");
-    cmd.arg("curl")
-        .arg("-a")
-        .arg(METATRON_APP)
-        .arg("-provideE2eToken");
+fn api_json(method: &str, path: &str, body: Option<&str>) -> UploadResult<String> {
+    let base = uploads_base_url().ok_or("no upload server is configured")?;
+    let url = format!("{}{}", base.trim_end_matches('/'), path);
+    let mut cmd = site::api_command();
     if method != "GET" {
         cmd.arg("-X").arg(method);
     }
@@ -386,9 +342,10 @@ fn metatron_json(method: &str, path: &str, body: Option<&str>) -> UploadResult<S
             .arg(b);
     }
     cmd.arg(&url);
+    let program = cmd.get_program().to_string_lossy().into_owned();
     let out = cmd
         .output()
-        .map_err(|e| format!("could not run `metatron`: {e}"))?;
+        .map_err(|e| format!("could not run `{program}`: {e}"))?;
     let text = String::from_utf8_lossy(&out.stdout).into_owned();
     if !out.status.success() {
         let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
@@ -402,10 +359,10 @@ fn metatron_json(method: &str, path: &str, body: Option<&str>) -> UploadResult<S
 }
 
 /// The signed-in user and the server's size cap, or an error naming
-/// why uploads won't work (metatron missing, not signed in).
+/// why uploads won't work (no server, not signed in).
 #[cfg(not(target_arch = "wasm32"))]
 pub fn uploads_whoami() -> UploadResult<(String, u64)> {
-    let text = metatron_json("GET", "/whoami", None)?;
+    let text = api_json("GET", "/whoami", None)?;
     let v: serde_json::Value = serde_json::from_str(&text).map_err(|_| api_error(&text))?;
     let user = v
         .get("user")
@@ -413,7 +370,7 @@ pub fn uploads_whoami() -> UploadResult<(String, u64)> {
         .unwrap_or("")
         .to_string();
     if user.is_empty() {
-        return Err("elog-access says you are not signed in".to_string());
+        return Err("the upload server says you are not signed in".to_string());
     }
     let max = v
         .get("max_bytes")
@@ -430,12 +387,12 @@ pub fn start_upload(
     note: &str,
 ) -> UploadResult<UploadStart> {
     let body = start_body(cache_name, file_name, size, note);
-    parse_start_response(&metatron_json("POST", "", Some(&body))?)
+    parse_start_response(&api_json("POST", "", Some(&body))?)
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn complete_upload(upload_id: &str) -> UploadResult<UploadRecord> {
-    parse_complete_response(&metatron_json(
+    parse_complete_response(&api_json(
         "POST",
         &format!("/{upload_id}/complete"),
         Some("{}"),
@@ -461,8 +418,8 @@ fn s3_error_message(body: &[u8], code: u16) -> String {
         .nth(1)
         .and_then(|r| r.split("</Message>").next());
     match msg {
-        Some(m) => format!("S3 refused the upload (HTTP {code}): {m}"),
-        None => format!("S3 refused the upload (HTTP {code})"),
+        Some(m) => format!("Storage refused the upload (HTTP {code}): {m}"),
+        None => format!("Storage refused the upload (HTTP {code})"),
     }
 }
 
@@ -521,7 +478,7 @@ fn s3_put_file(
         .map_err(|e| format!("curl wait failed: {e}"))?;
     if !out.status.success() {
         return Err(format!(
-            "the upload did not reach S3 (curl {}); S3 PUTs need full-tunnel VPN",
+            "the upload did not reach storage (curl {})",
             out.status
         ));
     }
@@ -534,7 +491,7 @@ fn s3_put_file(
     Err(s3_error_message(&body, code))
 }
 
-/// Upload one capture file end to end: sign, PUT to S3, finish.
+/// Upload one capture file end to end: sign, PUT to storage, finish.
 /// `progress` receives permille within `window` (so a multi-file
 /// caller can give each file a slice of one bar); `status` gets a
 /// short stage label.
@@ -566,7 +523,7 @@ pub fn upload_file(
     let start = start_upload(cache_name, &file_name, size, note)?;
     let (lo, hi) = window;
     let put_hi = lo + (hi - lo) * 9 / 10;
-    status("Uploading to S3…");
+    status("Uploading…");
     s3_put_file(path, &start, &|p| {
         progress.store(lo + (put_hi - lo) * p / 1000, Ordering::Relaxed);
     })?;
@@ -578,8 +535,8 @@ pub fn upload_file(
 }
 
 // ---------------------------------------------------------------------------
-// Web transport: XHR for both hops (SSO cookies for the API, the
-// presigned URL carries its own credentials for S3).
+// Web transport: XHR for both hops (page cookies for the API, the
+// presigned URL carries its own credentials).
 // ---------------------------------------------------------------------------
 
 #[cfg(target_arch = "wasm32")]
@@ -617,7 +574,7 @@ async fn xhr_json(method: &str, url: &str, body: Option<&str>) -> UploadResult<S
         let onerror = wasm_bindgen::closure::Closure::once(move || {
             let _ = reject.call1(
                 &JsValue::UNDEFINED,
-                &JsValue::from_str("network error reaching elog-access"),
+                &JsValue::from_str("network error reaching the upload server"),
             );
         });
         xhr.set_onerror(Some(onerror.as_ref().unchecked_ref()));
@@ -680,7 +637,7 @@ async fn xhr_put_blob(
                 let _ = reject_err.call1(
                     &JsValue::UNDEFINED,
                     &JsValue::from_str(&format!(
-                        "S3 refused the upload (HTTP {code}); it needs full-tunnel VPN. {text}"
+                        "Storage refused the upload (HTTP {code}). {text}"
                     )),
                 );
             }
@@ -690,7 +647,7 @@ async fn xhr_put_blob(
         let onerror = wasm_bindgen::closure::Closure::once(move || {
             let _ = reject.call1(
                 &JsValue::UNDEFINED,
-                &JsValue::from_str("the upload did not reach S3; it needs full-tunnel VPN"),
+                &JsValue::from_str("the upload did not reach storage"),
             );
         });
         xhr.set_onerror(Some(onerror.as_ref().unchecked_ref()));
@@ -724,7 +681,7 @@ pub async fn upload_file_web(
             MAX_UPLOAD_BYTES / (1024 * 1024 * 1024)
         ));
     }
-    let base = uploads_base_url();
+    let base = uploads_base_url().ok_or("no upload server is configured")?;
     let base = base.trim_end_matches('/');
     on_progress(0, "Signing upload…");
     let start = parse_start_response(
@@ -735,11 +692,11 @@ pub async fn upload_file_web(
         )
         .await?,
     )?;
-    on_progress(0, "Uploading to S3…");
+    on_progress(0, "Uploading…");
     let blob: &web_sys::Blob = file.unchecked_ref();
     let put_progress: std::rc::Rc<dyn Fn(u32)> = std::rc::Rc::new({
         let on_progress = on_progress.clone();
-        move |p| on_progress(p * 9 / 10, "Uploading to S3…")
+        move |p| on_progress(p * 9 / 10, "Uploading…")
     });
     xhr_put_blob(&start, blob, put_progress).await?;
     on_progress(950, "Finishing…");
@@ -768,9 +725,9 @@ mod tests {
 
     #[test]
     fn start_body_is_valid_json() {
-        let body = start_body("c658.sjc002.dev", "a\"b.elog", 42, "n\n");
+        let body = start_body("c101.lab001.dev", "a\"b.elog", 42, "n\n");
         let v: serde_json::Value = serde_json::from_str(&body).unwrap();
-        assert_eq!(v["cache_name"], "c658.sjc002.dev");
+        assert_eq!(v["cache_name"], "c101.lab001.dev");
         assert_eq!(v["file_name"], "a\"b.elog");
         assert_eq!(v["content_length"], 42);
         assert_eq!(v["note"], "n\n");
@@ -797,16 +754,16 @@ mod tests {
     fn parse_complete_response_reads_record() {
         let text = r#"{"upload": {
             "upload_id": "20261018-171500-deadbeef",
-            "user": "nickbanks@netflix.com",
-            "cache_name": "c658.sjc002.dev.nflxvideo.net",
+            "user": "user@example.com",
+            "cache_name": "c101.lab001.dev.example.net",
             "file_name": "run.elog.gz",
             "size": 12345,
             "note": "repro",
             "etag": "abc"
         }}"#;
         let rec = parse_complete_response(text).unwrap();
-        assert_eq!(rec.user, "nickbanks@netflix.com");
-        assert_eq!(rec.cache_name, "c658.sjc002.dev.nflxvideo.net");
+        assert_eq!(rec.user, "user@example.com");
+        assert_eq!(rec.cache_name, "c101.lab001.dev.example.net");
         assert_eq!(rec.size, 12345);
         assert_eq!(rec.etag, "abc");
     }
@@ -831,19 +788,19 @@ mod tests {
     #[test]
     fn infer_cache_name_matches_elog_access_rule() {
         assert_eq!(
-            infer_cache_name("c174.ord001.dev-eventlog-20261013.elog.gz"),
-            "c174.ord001.dev"
+            infer_cache_name("c102.lab002.dev-eventlog-20261013.elog.gz"),
+            "c102.lab002.dev"
         );
         assert_eq!(
-            infer_cache_name("c658.sjc002.dev-20260918-085841-nginx.elog"),
-            "c658.sjc002.dev"
+            infer_cache_name("c101.lab001.dev-20260918-085841-nginx.elog"),
+            "c101.lab001.dev"
         );
         assert_eq!(
-            infer_cache_name("/tmp/C658.SJC002.dev-x.elog"),
-            "C658.SJC002.dev"
+            infer_cache_name("/tmp/C101.LAB001.dev-x.elog"),
+            "C101.LAB001.dev"
         );
         assert_eq!(infer_cache_name("foo.elog"), "");
-        assert_eq!(infer_cache_name("c658.elog"), "");
+        assert_eq!(infer_cache_name("c101.elog"), "");
         assert_eq!(infer_cache_name(""), "");
     }
 
@@ -857,15 +814,15 @@ mod tests {
     fn eventexplorer_link_combines_files_and_tail() {
         let link = eventexplorer_link(
             &[
-                "https://ocdata.prod.netflix.net/elog-access/api/uploads/id1/download#a.elog"
+                "https://share.example.com/api/uploads/id1/download#a.elog"
                     .into(),
-                "https://ocdata.prod.netflix.net/elog-access/api/uploads/id2/download#b.elog"
+                "https://share.example.com/api/uploads/id2/download#b.elog"
                     .into(),
             ],
             "session=7&t=1,2",
         );
-        assert!(link.starts_with(DEFAULT_EVENTEXPLORER_PAGE));
-        assert!(link.contains("file=https%3A%2F%2Focdata.prod.netflix.net%2Felog-access%2Fapi%2Fuploads%2Fid1%2Fdownload%23a.elog"));
+        assert!(link.starts_with("https://share.example.com/eventexplorer/?"));
+        assert!(link.contains("file=https%3A%2F%2Fshare.example.com%2Fapi%2Fuploads%2Fid1%2Fdownload%23a.elog"));
         assert!(link.contains("&file="));
         assert!(link.ends_with("&session=7&t=1,2"));
     }
@@ -894,11 +851,11 @@ mod tests {
         let body = br#"<?xml version="1.0"?><Error><Code>AccessDenied</Code><Message>denied by rule</Message></Error>"#;
         assert_eq!(
             s3_error_message(body, 403),
-            "S3 refused the upload (HTTP 403): denied by rule"
+            "Storage refused the upload (HTTP 403): denied by rule"
         );
         assert_eq!(
             s3_error_message(b"oops", 500),
-            "S3 refused the upload (HTTP 500)"
+            "Storage refused the upload (HTTP 500)"
         );
     }
 }

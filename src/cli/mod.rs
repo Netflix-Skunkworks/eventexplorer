@@ -101,11 +101,11 @@ fn print_usage() {
     eprintln!("  nginxdiag            Summarize nginx TLS, cache, upstream, disk and stall events");
     eprintln!("  mem                  Dump mem provider MEM_INFO and SYS_SAMPLE page states (GiB)");
     eprintln!("  upload [--cache NAME] [--note TEXT] [--open]  Upload the capture to");
-    eprintln!("                       elog-access's Uploads sharing service (presigned S3 PUT,");
-    eprintln!("                       365-day retention) and print a shareable EventExplorer");
-    eprintln!("                       link. The cache name defaults to the appliance-style");
-    eprintln!("                       prefix of the file name (cNNN.siteNNN.dev-*); --open");
-    eprintln!("                       opens the link in a browser. Needs metatron + VPN.");
+    eprintln!("                       the site's share server (presigned PUT) and print a");
+    eprintln!("                       shareable EventExplorer link. The cache name defaults");
+    eprintln!("                       to the appliance-style prefix of the file name");
+    eprintln!("                       (cNNN.siteNNN.dev-*); --open opens the link in a");
+    eprintln!("                       browser. Needs uploads_url (docs/site-config.md).");
     eprintln!("  starsagg             Dump STARS_AGG_SAMPLE timeline (pressure/tokens/slot-gate");
     eprintln!("                       budget+peak-burst/denies+admits) plus a required-vs-");
     eprintln!("                       configured slot-gate-budget headroom check");
@@ -342,8 +342,9 @@ pub fn run() {
     // fetch them only for commands that symbolize, so a plain `summary`
     // or `events` never touches the network.
     let mut pack_stats: Option<PackInstallStats> = None;
-    if !cpu_profile.pack_refs.is_empty() && matches!(command, "flame" | "starsdiag") {
-        let stats = install_packs(&mut cpu_profile, &symbols_base_url());
+    let symbols = symbols_base_url().filter(|_| matches!(command, "flame" | "starsdiag"));
+    if let Some(base) = symbols.filter(|_| !cpu_profile.pack_refs.is_empty()) {
+        let stats = install_packs(&mut cpu_profile, &base);
         eprintln!(
             "# symbol packs: {} ref(s), {} already inline, {} installed, {} failed",
             stats.refs, stats.already_inline, stats.installed, stats.failed

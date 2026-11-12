@@ -32,6 +32,10 @@ required-features = ["native-bins"]
 default = ["native-bins"]
 native-bins = []
 
+[build-dependencies]
+# Parses EE_SITE_CONFIG (see build.rs / src/site_file.rs).
+serde_json = "1"
+
 [dependencies]
 # Cross-platform deps (work on native and wasm32-unknown-unknown).
 eframe = "0.27"

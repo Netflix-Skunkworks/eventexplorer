@@ -482,18 +482,22 @@ impl eframe::App for EventExplorerApp {
                         self.open_origin_segments_dialog();
                     }
                     // Share: on web a permalink to this view (plus an
-                    // elog-access upload when the capture came from
-                    // the file picker); on desktop an upload dialog
-                    // that lands the same kind of permalink.
+                    // upload when the capture came from the file picker
+                    // and the site has a share server); on desktop an
+                    // upload dialog that lands the same kind of
+                    // permalink, so it needs the share server.
                     let share_tip = if cfg!(target_arch = "wasm32") {
                         "Share link to this view"
                     } else {
-                        "Share capture (upload to elog-access)"
+                        "Share capture (upload to the share server)"
                     };
-                    if ui
-                        .add(egui::Button::new(RichText::new("🔗").size(16.0)))
-                        .on_hover_text(share_tip)
-                        .clicked()
+                    let can_share =
+                        cfg!(target_arch = "wasm32") || elog_parser::uploads_configured();
+                    if can_share
+                        && ui
+                            .add(egui::Button::new(RichText::new("🔗").size(16.0)))
+                            .on_hover_text(share_tip)
+                            .clicked()
                     {
                         self.share_popup_open = !self.share_popup_open;
                     }
