@@ -1,0 +1,12 @@
+session=0x2002 remote=10.0.0.1:443 log_id=""
+  events=123 duration_sec=0.200500
+  bytes_sent=29200 bytes_acked=30660
+  avg_goodput_mbps=1.223342 avg_pacing_mbps=0.000000 avg_kernel_goodput_mbps=192.000000
+  avg_srtt_ms=21.000000 min_rtt_ms=19.500000
+  recovery_count=1 owner_pid=None
+session=0x1001 remote=10.0.0.1:443 log_id=""
+  events=123 duration_sec=0.200500
+  bytes_sent=29200 bytes_acked=30660
+  avg_goodput_mbps=1.223342 avg_pacing_mbps=0.000000 avg_kernel_goodput_mbps=192.000000
+  avg_srtt_ms=21.000000 min_rtt_ms=19.500000
+  recovery_count=1 owner_pid=None

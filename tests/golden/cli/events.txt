@@ -1,0 +1,148 @@
+--- stdout ---
+=== File Info ===
+  version:         1
+  capture_start:   1000000 us
+  start_utc_us:    1700000000000000 us
+  events (header): 298
+  events (parsed): 298
+  skipped:         0
+  dropped:         0
+  providers:
+    id=1 name="tcp" events=262 first=0.000s last=0.400s
+    id=2 name="hpts" events=8 first=0.000s last=0.350s
+    id=3 name="cpu" events=19 first=0.000s last=0.220s
+    id=4 name="if" events=9 first=0.000s last=0.500s
+  sessions:        2
+  stars_agg_samples:8
+  stars_pace_samples:0
+  if_provider:     1 interfaces, 6 samples, 2 change events (period 100000 us)
+  tcp_samples:     1 stacks, 5 state, 5 rps, 5 goodput-hist, 0 pacing-rate-hist, 0 realized-rate-hist samples
+  cpu_samples:     12 (2 threads, 0 dropped)
+  cpu_symbols:     3 symbols across 1 linker files
+
+=== Events for session 0x1001 (123 of 123 events shown) ===
+     0.010s  cpu=0   tid=100    SESSION_CREATE   SessionCreate { tp: 3735928559 }
+     0.010s  cpu=0   tid=100    CONN_SET_IP_V4   ConnSetIpV4 { src_addr: 10.0.0.2, src_port: 12345, dst_addr: 10.0.0.1, dst_port: 443 }
+     0.010s  cpu=0   tid=100    CONN_PARAMS_V2   iss=1000 irs=2000 mss=1460 snd_wscale=7 rcv_wscale=8 flags=0x43 (SACK+TS+WSCALE) cc_algo=cubic tcp_stack=rack
+     0.010s  cpu=0   tid=100    CONN_OWNER       pid=4242
+     0.020s  cpu=0   tid=100    OUT              Out { seq: 1000, ack: 2000, win: 65535, len: 1460, flags: 16, cwnd: 14600, th_off: 0, th_sum: 0, th_urp: 0 }
+     0.021s  cpu=0   tid=100    ACK              Ack { acked: 1460, snd_una: 1000, inflight: 7300, sacked: 0, nsegs: 2, rcv_time_us: 0, num_blocks: 0, blk1_start: 0, blk1_end: 0, blk2_start: 0, blk2_end: 0, blk3_start: 0, blk3_end: 0, blk4_start: 0, blk4_end: 0 }
+     0.021s  cpu=0   tid=100    RTT              Rtt { rtt: 20000, srtt: 21000, path_rtt: 22000, lowest_rtt: 19500, gp_filter_min: 19000, gp_srtt: 21500 }
+     0.021s  cpu=0   tid=100    CWND             Cwnd { cwnd: 16060, ssthresh: 58400 }
+     0.021s  cpu=0   tid=100    PACING_CALC_V2   PacingCalc { slot: 1000, bw_est: 25000000, method: 1, quality: 2, in_slow_start: 0, cap_source: 1, inflight: 7300 }
+     0.021s  cpu=0   tid=100    GOODPUT          Goodput { goodput: 24000000, raw_bw: 26000000, utim: 200000, gp_srtt: 0, lowest_rtt: 0, pacing_bw: 0 }
+     0.021s  cpu=0   tid=100    GP_CHECK         GpCheck { elapsed_us: 200000, utim_us: 180000, now_us: 1020950, start_ts_us: 1020000, last_ack_us: 1020500, srtt_us: 21000, th_ack: 2460, bytes: 50000, min_bytes: 16000, reason: 1 }
+     0.030s  cpu=0   tid=100    OUT              Out { seq: 3920, ack: 2000, win: 65535, len: 1460, flags: 16, cwnd: 16060, th_off: 0, th_sum: 0, th_urp: 0 }
+     0.030s  cpu=0   tid=100    ACK              Ack { acked: 1460, snd_una: 2460, inflight: 7300, sacked: 0, nsegs: 2, rcv_time_us: 0, num_blocks: 0, blk1_start: 0, blk1_end: 0, blk2_start: 0, blk2_end: 0, blk3_start: 0, blk3_end: 0, blk4_start: 0, blk4_end: 0 }
+     0.031s  cpu=0   tid=100    RTT              Rtt { rtt: 20100, srtt: 21000, path_rtt: 22000, lowest_rtt: 19500, gp_filter_min: 19000, gp_srtt: 21500 }
+     0.031s  cpu=0   tid=100    CWND             Cwnd { cwnd: 17520, ssthresh: 58400 }
+     0.031s  cpu=0   tid=100    PACING_CALC_V2   PacingCalc { slot: 1000, bw_est: 25000000, method: 1, quality: 2, in_slow_start: 0, cap_source: 2, inflight: 7300 }
+     0.040s  cpu=0   tid=100    OUT              Out { seq: 6840, ack: 2000, win: 65535, len: 1460, flags: 16, cwnd: 17520, th_off: 0, th_sum: 0, th_urp: 0 }
+     0.041s  cpu=0   tid=100    ACK              Ack { acked: 1460, snd_una: 3920, inflight: 7300, sacked: 0, nsegs: 2, rcv_time_us: 0, num_blocks: 0, blk1_start: 0, blk1_end: 0, blk2_start: 0, blk2_end: 0, blk3_start: 0, blk3_end: 0, blk4_start: 0, blk4_end: 0 }
+     0.041s  cpu=0   tid=100    RTT              Rtt { rtt: 20200, srtt: 21000, path_rtt: 22000, lowest_rtt: 19500, gp_filter_min: 19000, gp_srtt: 21500 }
+     0.041s  cpu=0   tid=100    CWND             Cwnd { cwnd: 18980, ssthresh: 58400 }
+     0.041s  cpu=0   tid=100    PACING_CALC_V2   PacingCalc { slot: 1000, bw_est: 25000000, method: 1, quality: 2, in_slow_start: 0, cap_source: 1, inflight: 7300 }
+     0.050s  cpu=0   tid=100    OUT              Out { seq: 9760, ack: 2000, win: 65535, len: 1460, flags: 16, cwnd: 18980, th_off: 0, th_sum: 0, th_urp: 0 }
+     0.050s  cpu=0   tid=100    USER_SEND        error=0 flags=0x00000000 state=4 sndbuf_used=32000 sndbuf_avail=96000 send_len=64000
+     0.051s  cpu=0   tid=100    ACK              Ack { acked: 1460, snd_una: 5380, inflight: 7300, sacked: 0, nsegs: 2, rcv_time_us: 0, num_blocks: 0, blk1_start: 0, blk1_end: 0, blk2_start: 0, blk2_end: 0, blk3_start: 0, blk3_end: 0, blk4_start: 0, blk4_end: 0 }
+     0.051s  cpu=0   tid=100    RTT              Rtt { rtt: 20300, srtt: 21000, path_rtt: 22000, lowest_rtt: 19500, gp_filter_min: 19000, gp_srtt: 21500 }
+     0.051s  cpu=0   tid=100    CWND             Cwnd { cwnd: 20440, ssthresh: 58400 }
+     0.051s  cpu=0   tid=100    PACING_CALC_V2   PacingCalc { slot: 1000, bw_est: 25000000, method: 1, quality: 2, in_slow_start: 0, cap_source: 2, inflight: 7300 }
+     0.060s  cpu=0   tid=100    OUT              Out { seq: 12680, ack: 2000, win: 65535, len: 1460, flags: 16, cwnd: 20440, th_off: 0, th_sum: 0, th_urp: 0 }
+     0.060s  cpu=0   tid=100    ACK              Ack { acked: 1460, snd_una: 6840, inflight: 7300, sacked: 0, nsegs: 2, rcv_time_us: 0, num_blocks: 0, blk1_start: 0, blk1_end: 0, blk2_start: 0, blk2_end: 0, blk3_start: 0, blk3_end: 0, blk4_start: 0, blk4_end: 0 }
+     0.061s  cpu=0   tid=100    RTT              Rtt { rtt: 20400, srtt: 21000, path_rtt: 22000, lowest_rtt: 19500, gp_filter_min: 19000, gp_srtt: 21500 }
+     0.061s  cpu=0   tid=100    CWND             Cwnd { cwnd: 21900, ssthresh: 58400 }
+     0.061s  cpu=0   tid=100    PACING_CALC_V2   PacingCalc { slot: 1000, bw_est: 25000000, method: 1, quality: 2, in_slow_start: 0, cap_source: 1, inflight: 7300 }
+     0.070s  cpu=0   tid=100    OUT              Out { seq: 15600, ack: 2000, win: 65535, len: 1460, flags: 16, cwnd: 21900, th_off: 0, th_sum: 0, th_urp: 0 }
+     0.070s  cpu=0   tid=100    ACK              Ack { acked: 1460, snd_una: 8300, inflight: 7300, sacked: 0, nsegs: 2, rcv_time_us: 0, num_blocks: 0, blk1_start: 0, blk1_end: 0, blk2_start: 0, blk2_end: 0, blk3_start: 0, blk3_end: 0, blk4_start: 0, blk4_end: 0 }
+     0.071s  cpu=0   tid=100    RTT              Rtt { rtt: 20500, srtt: 21000, path_rtt: 22000, lowest_rtt: 19500, gp_filter_min: 19000, gp_srtt: 21500 }
+     0.071s  cpu=0   tid=100    CWND             Cwnd { cwnd: 23360, ssthresh: 58400 }
+     0.071s  cpu=0   tid=100    PACING_CALC_V2   PacingCalc { slot: 1000, bw_est: 25000000, method: 1, quality: 2, in_slow_start: 0, cap_source: 2, inflight: 7300 }
+     0.071s  cpu=0   tid=100    GOODPUT          Goodput { goodput: 24000000, raw_bw: 26000000, utim: 200000, gp_srtt: 0, lowest_rtt: 0, pacing_bw: 0 }
+     0.071s  cpu=0   tid=100    GP_CHECK         GpCheck { elapsed_us: 200000, utim_us: 180000, now_us: 1070950, start_ts_us: 1070000, last_ack_us: 1070500, srtt_us: 21000, th_ack: 9760, bytes: 50000, min_bytes: 16000, reason: 1 }
+     0.080s  cpu=0   tid=100    OUT              Out { seq: 18520, ack: 2000, win: 65535, len: 1460, flags: 16, cwnd: 23360, th_off: 0, th_sum: 0, th_urp: 0 }
+     0.081s  cpu=0   tid=100    ACK              Ack { acked: 1460, snd_una: 9760, inflight: 7300, sacked: 0, nsegs: 2, rcv_time_us: 0, num_blocks: 0, blk1_start: 0, blk1_end: 0, blk2_start: 0, blk2_end: 0, blk3_start: 0, blk3_end: 0, blk4_start: 0, blk4_end: 0 }
+     0.081s  cpu=0   tid=100    RTT              Rtt { rtt: 20600, srtt: 21000, path_rtt: 22000, lowest_rtt: 19500, gp_filter_min: 19000, gp_srtt: 21500 }
+     0.081s  cpu=0   tid=100    CWND             Cwnd { cwnd: 24820, ssthresh: 58400 }
+     0.081s  cpu=0   tid=100    PACING_CALC_V2   PacingCalc { slot: 1000, bw_est: 25000000, method: 1, quality: 2, in_slow_start: 0, cap_source: 1, inflight: 7300 }
+     0.090s  cpu=0   tid=100    ENTER_RECOVERY   EnterRecovery { cwnd: 11680, ssthresh: 29200 }
+     0.090s  cpu=0   tid=100    OUT              Out { seq: 21440, ack: 2000, win: 65535, len: 1460, flags: 16, cwnd: 24820, th_off: 0, th_sum: 0, th_urp: 0 }
+     0.090s  cpu=0   tid=100    RTO              timeout#0 rtt=20000us min_rtt=19500us seg=1460B inflight=11680B pkts_out=6
+     0.090s  cpu=0   tid=100    DSACK            round=1 num_dsack=1 persist=3 (round_seen=1 round_end=31660 mod=0)
+     0.090s  cpu=0   tid=100    WINDOW_COLLAPSE  2 segments, direction=COLLAPSED inflight=11680B has_collapsed=1
+     0.090s  cpu=0   tid=100    ACK              Ack { acked: 1460, snd_una: 11220, inflight: 7300, sacked: 0, nsegs: 2, rcv_time_us: 0, num_blocks: 0, blk1_start: 0, blk1_end: 0, blk2_start: 0, blk2_end: 0, blk3_start: 0, blk3_end: 0, blk4_start: 0, blk4_end: 0 }
+     0.091s  cpu=0   tid=100    RTT              Rtt { rtt: 20700, srtt: 21000, path_rtt: 22000, lowest_rtt: 19500, gp_filter_min: 19000, gp_srtt: 21500 }
+     0.091s  cpu=0   tid=100    CWND             Cwnd { cwnd: 26280, ssthresh: 58400 }
+     0.091s  cpu=0   tid=100    PACING_CALC_V2   PacingCalc { slot: 1000, bw_est: 25000000, method: 1, quality: 2, in_slow_start: 0, cap_source: 2, inflight: 7300 }
+     0.095s  cpu=0   tid=100    EXIT_RECOVERY    ExitRecovery { cwnd: 14600, ssthresh: 29200 }
+     0.100s  cpu=0   tid=100    OUT              Out { seq: 24360, ack: 2000, win: 65535, len: 1460, flags: 16, cwnd: 26280, th_off: 0, th_sum: 0, th_urp: 0 }
+     0.101s  cpu=0   tid=100    ACK              Ack { acked: 1460, snd_una: 12680, inflight: 7300, sacked: 0, nsegs: 2, rcv_time_us: 0, num_blocks: 0, blk1_start: 0, blk1_end: 0, blk2_start: 0, blk2_end: 0, blk3_start: 0, blk3_end: 0, blk4_start: 0, blk4_end: 0 }
+     0.101s  cpu=0   tid=100    RTT              Rtt { rtt: 20800, srtt: 21000, path_rtt: 22000, lowest_rtt: 19500, gp_filter_min: 19000, gp_srtt: 21500 }
+     0.101s  cpu=0   tid=100    CWND             Cwnd { cwnd: 27740, ssthresh: 58400 }
+     0.101s  cpu=0   tid=100    PACING_CALC_V2   PacingCalc { slot: 1000, bw_est: 25000000, method: 1, quality: 2, in_slow_start: 0, cap_source: 1, inflight: 7300 }
+     0.110s  cpu=0   tid=100    OUT              Out { seq: 27280, ack: 2000, win: 65535, len: 1460, flags: 16, cwnd: 27740, th_off: 0, th_sum: 0, th_urp: 0 }
+     0.111s  cpu=0   tid=100    ACK              Ack { acked: 1460, snd_una: 14140, inflight: 7300, sacked: 0, nsegs: 2, rcv_time_us: 0, num_blocks: 0, blk1_start: 0, blk1_end: 0, blk2_start: 0, blk2_end: 0, blk3_start: 0, blk3_end: 0, blk4_start: 0, blk4_end: 0 }
+     0.111s  cpu=0   tid=100    RTT              Rtt { rtt: 20900, srtt: 21000, path_rtt: 22000, lowest_rtt: 19500, gp_filter_min: 19000, gp_srtt: 21500 }
+     0.111s  cpu=0   tid=100    CWND             Cwnd { cwnd: 29200, ssthresh: 58400 }
+     0.111s  cpu=0   tid=100    PACING_CALC_V2   PacingCalc { slot: 1000, bw_est: 25000000, method: 1, quality: 2, in_slow_start: 0, cap_source: 2, inflight: 7300 }
+     0.120s  cpu=0   tid=100    OUT              Out { seq: 30200, ack: 2000, win: 65535, len: 1460, flags: 16, cwnd: 29200, th_off: 0, th_sum: 0, th_urp: 0 }
+     0.120s  cpu=0   tid=100    ACK              Ack { acked: 1460, snd_una: 15600, inflight: 7300, sacked: 0, nsegs: 2, rcv_time_us: 0, num_blocks: 0, blk1_start: 0, blk1_end: 0, blk2_start: 0, blk2_end: 0, blk3_start: 0, blk3_end: 0, blk4_start: 0, blk4_end: 0 }
+     0.121s  cpu=0   tid=100    RTT              Rtt { rtt: 21000, srtt: 21000, path_rtt: 22000, lowest_rtt: 19500, gp_filter_min: 19000, gp_srtt: 21500 }
+     0.121s  cpu=0   tid=100    CWND             Cwnd { cwnd: 30660, ssthresh: 58400 }
+     0.121s  cpu=0   tid=100    PACING_CALC_V2   PacingCalc { slot: 1000, bw_est: 25000000, method: 1, quality: 2, in_slow_start: 0, cap_source: 1, inflight: 7300 }
+     0.121s  cpu=0   tid=100    GOODPUT          Goodput { goodput: 24000000, raw_bw: 26000000, utim: 200000, gp_srtt: 0, lowest_rtt: 0, pacing_bw: 0 }
+     0.121s  cpu=0   tid=100    GP_CHECK         GpCheck { elapsed_us: 200000, utim_us: 180000, now_us: 1120950, start_ts_us: 1120000, last_ack_us: 1120500, srtt_us: 21000, th_ack: 17060, bytes: 50000, min_bytes: 16000, reason: 1 }
+     0.130s  cpu=0   tid=100    OUT              Out { seq: 33120, ack: 2000, win: 65535, len: 1460, flags: 16, cwnd: 30660, th_off: 0, th_sum: 0, th_urp: 0 }
+     0.130s  cpu=0   tid=100    RTT_UNDERFLOW    RttUnderflow { us_rtt: 100, minuend: 200, subtrahend: 300, location: 2 }
+     0.131s  cpu=0   tid=100    ACK              Ack { acked: 1460, snd_una: 17060, inflight: 7300, sacked: 0, nsegs: 2, rcv_time_us: 0, num_blocks: 0, blk1_start: 0, blk1_end: 0, blk2_start: 0, blk2_end: 0, blk3_start: 0, blk3_end: 0, blk4_start: 0, blk4_end: 0 }
+     0.131s  cpu=0   tid=100    RTT              Rtt { rtt: 21100, srtt: 21000, path_rtt: 22000, lowest_rtt: 19500, gp_filter_min: 19000, gp_srtt: 21500 }
+     0.131s  cpu=0   tid=100    CWND             Cwnd { cwnd: 32120, ssthresh: 58400 }
+     0.131s  cpu=0   tid=100    PACING_CALC_V2   PacingCalc { slot: 1000, bw_est: 25000000, method: 1, quality: 2, in_slow_start: 0, cap_source: 2, inflight: 7300 }
+     0.131s  cpu=0   tid=100    PACE_STATE       PaceState { rc_pace_min_segs: 2, rc_pace_max_segs: 16 }
+     0.132s  cpu=0   tid=100    TCP_STACK_CHANGE tcp_stack=rack
+     0.133s  cpu=0   tid=100    CC_ALGO_CHANGE   cc_algo=cubic
+     0.134s  cpu=0   tid=100    SACK             Ack { acked: 1460, snd_una: 30200, inflight: 5840, sacked: 1460, nsegs: 1, rcv_time_us: 0, num_blocks: 0, blk1_start: 0, blk1_end: 0, blk2_start: 0, blk2_end: 0, blk3_start: 0, blk3_end: 0, blk4_start: 0, blk4_end: 0 }
+     0.140s  cpu=0   tid=100    OUT              Out { seq: 36040, ack: 2000, win: 65535, len: 1460, flags: 16, cwnd: 32120, th_off: 0, th_sum: 0, th_urp: 0 }
+     0.141s  cpu=0   tid=100    ACK              Ack { acked: 1460, snd_una: 18520, inflight: 7300, sacked: 0, nsegs: 2, rcv_time_us: 0, num_blocks: 0, blk1_start: 0, blk1_end: 0, blk2_start: 0, blk2_end: 0, blk3_start: 0, blk3_end: 0, blk4_start: 0, blk4_end: 0 }
+     0.141s  cpu=0   tid=100    RTT              Rtt { rtt: 21200, srtt: 21000, path_rtt: 22000, lowest_rtt: 19500, gp_filter_min: 19000, gp_srtt: 21500 }
+     0.141s  cpu=0   tid=100    CWND             Cwnd { cwnd: 33580, ssthresh: 58400 }
+     0.141s  cpu=0   tid=100    PACING_CALC_V2   PacingCalc { slot: 1000, bw_est: 25000000, method: 1, quality: 2, in_slow_start: 0, cap_source: 1, inflight: 7300 }
+     0.150s  cpu=0   tid=100    OUT              Out { seq: 38960, ack: 2000, win: 65535, len: 1460, flags: 16, cwnd: 33580, th_off: 0, th_sum: 0, th_urp: 0 }
+     0.150s  cpu=0   tid=100    ACK              Ack { acked: 1460, snd_una: 19980, inflight: 7300, sacked: 0, nsegs: 2, rcv_time_us: 0, num_blocks: 0, blk1_start: 0, blk1_end: 0, blk2_start: 0, blk2_end: 0, blk3_start: 0, blk3_end: 0, blk4_start: 0, blk4_end: 0 }
+     0.151s  cpu=0   tid=100    RTT              Rtt { rtt: 21300, srtt: 21000, path_rtt: 22000, lowest_rtt: 19500, gp_filter_min: 19000, gp_srtt: 21500 }
+     0.151s  cpu=0   tid=100    CWND             Cwnd { cwnd: 35040, ssthresh: 58400 }
+     0.151s  cpu=0   tid=100    PACING_CALC_V2   PacingCalc { slot: 1000, bw_est: 25000000, method: 1, quality: 2, in_slow_start: 0, cap_source: 2, inflight: 7300 }
+     0.160s  cpu=0   tid=100    OUT              Out { seq: 41880, ack: 2000, win: 65535, len: 1460, flags: 16, cwnd: 35040, th_off: 0, th_sum: 0, th_urp: 0 }
+     0.161s  cpu=0   tid=100    ACK              Ack { acked: 1460, snd_una: 21440, inflight: 7300, sacked: 0, nsegs: 2, rcv_time_us: 0, num_blocks: 0, blk1_start: 0, blk1_end: 0, blk2_start: 0, blk2_end: 0, blk3_start: 0, blk3_end: 0, blk4_start: 0, blk4_end: 0 }
+     0.161s  cpu=0   tid=100    RTT              Rtt { rtt: 21400, srtt: 21000, path_rtt: 22000, lowest_rtt: 19500, gp_filter_min: 19000, gp_srtt: 21500 }
+     0.161s  cpu=0   tid=100    CWND             Cwnd { cwnd: 36500, ssthresh: 58400 }
+     0.161s  cpu=0   tid=100    PACING_CALC_V2   PacingCalc { slot: 1000, bw_est: 25000000, method: 1, quality: 2, in_slow_start: 0, cap_source: 1, inflight: 7300 }
+     0.170s  cpu=0   tid=100    OUT              Out { seq: 44800, ack: 2000, win: 65535, len: 1460, flags: 16, cwnd: 36500, th_off: 0, th_sum: 0, th_urp: 0 }
+     0.171s  cpu=0   tid=100    ACK              Ack { acked: 1460, snd_una: 22900, inflight: 7300, sacked: 0, nsegs: 2, rcv_time_us: 0, num_blocks: 0, blk1_start: 0, blk1_end: 0, blk2_start: 0, blk2_end: 0, blk3_start: 0, blk3_end: 0, blk4_start: 0, blk4_end: 0 }
+     0.171s  cpu=0   tid=100    RTT              Rtt { rtt: 21500, srtt: 21000, path_rtt: 22000, lowest_rtt: 19500, gp_filter_min: 19000, gp_srtt: 21500 }
+     0.171s  cpu=0   tid=100    CWND             Cwnd { cwnd: 37960, ssthresh: 58400 }
+     0.171s  cpu=0   tid=100    PACING_CALC_V2   PacingCalc { slot: 1000, bw_est: 25000000, method: 1, quality: 2, in_slow_start: 0, cap_source: 2, inflight: 7300 }
+     0.171s  cpu=0   tid=100    GOODPUT          Goodput { goodput: 24000000, raw_bw: 26000000, utim: 200000, gp_srtt: 0, lowest_rtt: 0, pacing_bw: 0 }
+     0.171s  cpu=0   tid=100    GP_CHECK         GpCheck { elapsed_us: 200000, utim_us: 180000, now_us: 1170950, start_ts_us: 1170000, last_ack_us: 1170500, srtt_us: 21000, th_ack: 24360, bytes: 50000, min_bytes: 16000, reason: 1 }
+     0.180s  cpu=0   tid=100    OUT              Out { seq: 47720, ack: 2000, win: 65535, len: 1460, flags: 16, cwnd: 37960, th_off: 0, th_sum: 0, th_urp: 0 }
+     0.180s  cpu=0   tid=100    ACK              Ack { acked: 1460, snd_una: 24360, inflight: 7300, sacked: 0, nsegs: 2, rcv_time_us: 0, num_blocks: 0, blk1_start: 0, blk1_end: 0, blk2_start: 0, blk2_end: 0, blk3_start: 0, blk3_end: 0, blk4_start: 0, blk4_end: 0 }
+     0.181s  cpu=0   tid=100    RTT              Rtt { rtt: 21600, srtt: 21000, path_rtt: 22000, lowest_rtt: 19500, gp_filter_min: 19000, gp_srtt: 21500 }
+     0.181s  cpu=0   tid=100    CWND             Cwnd { cwnd: 39420, ssthresh: 58400 }
+     0.181s  cpu=0   tid=100    PACING_CALC_V2   PacingCalc { slot: 1000, bw_est: 25000000, method: 1, quality: 2, in_slow_start: 0, cap_source: 1, inflight: 7300 }
+     0.190s  cpu=0   tid=100    OUT              Out { seq: 50640, ack: 2000, win: 65535, len: 1460, flags: 16, cwnd: 39420, th_off: 0, th_sum: 0, th_urp: 0 }
+     0.191s  cpu=0   tid=100    ACK              Ack { acked: 1460, snd_una: 25820, inflight: 7300, sacked: 0, nsegs: 2, rcv_time_us: 0, num_blocks: 0, blk1_start: 0, blk1_end: 0, blk2_start: 0, blk2_end: 0, blk3_start: 0, blk3_end: 0, blk4_start: 0, blk4_end: 0 }
+     0.191s  cpu=0   tid=100    RTT              Rtt { rtt: 21700, srtt: 21000, path_rtt: 22000, lowest_rtt: 19500, gp_filter_min: 19000, gp_srtt: 21500 }
+     0.191s  cpu=0   tid=100    CWND             Cwnd { cwnd: 40880, ssthresh: 58400 }
+     0.191s  cpu=0   tid=100    PACING_CALC_V2   PacingCalc { slot: 1000, bw_est: 25000000, method: 1, quality: 2, in_slow_start: 0, cap_source: 2, inflight: 7300 }
+     0.200s  cpu=0   tid=100    OUT              Out { seq: 53560, ack: 2000, win: 65535, len: 1460, flags: 16, cwnd: 40880, th_off: 0, th_sum: 0, th_urp: 0 }
+     0.201s  cpu=0   tid=100    ACK              Ack { acked: 1460, snd_una: 27280, inflight: 7300, sacked: 0, nsegs: 2, rcv_time_us: 0, num_blocks: 0, blk1_start: 0, blk1_end: 0, blk2_start: 0, blk2_end: 0, blk3_start: 0, blk3_end: 0, blk4_start: 0, blk4_end: 0 }
+     0.201s  cpu=0   tid=100    RTT              Rtt { rtt: 21800, srtt: 21000, path_rtt: 22000, lowest_rtt: 19500, gp_filter_min: 19000, gp_srtt: 21500 }
+     0.201s  cpu=0   tid=100    CWND             Cwnd { cwnd: 42340, ssthresh: 58400 }
+     0.201s  cpu=0   tid=100    PACING_CALC_V2   PacingCalc { slot: 1000, bw_est: 25000000, method: 1, quality: 2, in_slow_start: 0, cap_source: 1, inflight: 7300 }
+     0.210s  cpu=0   tid=100    OUT              Out { seq: 56480, ack: 2000, win: 65535, len: 1460, flags: 16, cwnd: 42340, th_off: 0, th_sum: 0, th_urp: 0 }
+     0.210s  cpu=0   tid=100    ACK              Ack { acked: 1460, snd_una: 28740, inflight: 7300, sacked: 0, nsegs: 2, rcv_time_us: 0, num_blocks: 0, blk1_start: 0, blk1_end: 0, blk2_start: 0, blk2_end: 0, blk3_start: 0, blk3_end: 0, blk4_start: 0, blk4_end: 0 }
+     0.211s  cpu=0   tid=100    RTT              Rtt { rtt: 21900, srtt: 21000, path_rtt: 22000, lowest_rtt: 19500, gp_filter_min: 19000, gp_srtt: 21500 }
+     0.211s  cpu=0   tid=100    CWND             Cwnd { cwnd: 43800, ssthresh: 58400 }
+     0.211s  cpu=0   tid=100    PACING_CALC_V2   PacingCalc { slot: 1000, bw_est: 25000000, method: 1, quality: 2, in_slow_start: 0, cap_source: 2, inflight: 7300 }
+
+--- stderr ---

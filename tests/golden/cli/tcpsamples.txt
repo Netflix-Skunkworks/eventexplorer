@@ -1,0 +1,51 @@
+--- stdout ---
+=== File Info ===
+  version:         1
+  capture_start:   1000000 us
+  start_utc_us:    1700000000000000 us
+  events (header): 298
+  events (parsed): 298
+  skipped:         0
+  dropped:         0
+  providers:
+    id=1 name="tcp" events=262 first=0.000s last=0.400s
+    id=2 name="hpts" events=8 first=0.000s last=0.350s
+    id=3 name="cpu" events=19 first=0.000s last=0.220s
+    id=4 name="if" events=9 first=0.000s last=0.500s
+  sessions:        2
+  stars_agg_samples:8
+  stars_pace_samples:0
+  if_provider:     1 interfaces, 6 samples, 2 change events (period 100000 us)
+  tcp_samples:     1 stacks, 5 state, 5 rps, 5 goodput-hist, 0 pacing-rate-hist, 0 realized-rate-hist samples
+  cpu_samples:     12 (2 threads, 0 dropped)
+  cpu_symbols:     3 symbols across 1 linker files
+
+=== TCP stacks (1) ===
+  provider=1   session=0x0000000000009000  stack=rack             sample_period_us=100000
+
+=== TCP_SAMPLE state gauges (5 samples) ===
+      t(s)  stack           closed  listen syn_sent syn_rcvd   estab  close_w  fin_w1 closing last_ack  fin_w2  time_w     total
+----------------------------------------------------------------------------------------------------------------------------------
+     0.000  rack                 0       1        0        0     100        2       0       0        0       0       0       103
+     0.100  rack                 0       1        0        0     101        2       0       0        0       0       1       105
+     0.200  rack                 0       1        0        0     102        2       0       0        0       0       2       107
+     0.300  rack                 0       1        0        0     103        2       0       0        0       0       3       109
+     0.400  rack                 0       1        0        0     104        2       0       0        0       0       4       111
+
+=== TCP_RPS_SAMPLE (requests/sec, 5 samples) ===
+      t(s)  stack              cum_requests        req/s
+------------------------------------------------------------
+     0.000  rack                       1000            -
+     0.100  rack                       1050        500.0
+     0.200  rack                       1100        500.0
+     0.300  rack                       1150        500.0
+     0.400  rack                       1200        500.0
+
+=== TCP_GP_SAMPLE goodput histogram (5 samples) ===
+     0.000s  rack           [10, 20, 30, 40]
+     0.100s  rack           [10, 20, 30, 40]
+     0.200s  rack           [10, 20, 30, 40]
+     0.300s  rack           [10, 20, 30, 40]
+     0.400s  rack           [10, 20, 30, 40]
+
+--- stderr ---

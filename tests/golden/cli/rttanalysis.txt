@@ -1,0 +1,103 @@
+--- stdout ---
+=== File Info ===
+  version:         1
+  capture_start:   1000000 us
+  start_utc_us:    1700000000000000 us
+  events (header): 298
+  events (parsed): 298
+  skipped:         0
+  dropped:         0
+  providers:
+    id=1 name="tcp" events=262 first=0.000s last=0.400s
+    id=2 name="hpts" events=8 first=0.000s last=0.350s
+    id=3 name="cpu" events=19 first=0.000s last=0.220s
+    id=4 name="if" events=9 first=0.000s last=0.500s
+  sessions:        2
+  stars_agg_samples:8
+  stars_pace_samples:0
+  if_provider:     1 interfaces, 6 samples, 2 change events (period 100000 us)
+  tcp_samples:     1 stacks, 5 state, 5 rps, 5 goodput-hist, 0 pacing-rate-hist, 0 realized-rate-hist samples
+  cpu_samples:     12 (2 threads, 0 dropped)
+  cpu_symbols:     3 symbols across 1 linker files
+
+=== RTT Metric Analysis: srtt vs gp_srtt vs path_rtt ===
+  Goal: determine if these 3 smoothed RTT metrics can be collapsed.
+  Only samples where all 3 are valid (>0, not underflow) are included.
+
+--- Per-Session Detail (top 2 of 2 sessions by sample count) ---
+
+  Session 0x2002  remote=10.0.0.1:443            samples=20  duration=0.2s
+    metric (us)               min      p25      p50      p75      p95      p99      max     mean   stddev
+    --------------------------------------------------------------------------------------------------------
+    Smoothed RTT            21000    21000    21000    21000    21000    21000    21000    21000      0.0
+    GP Smoothed RTT         21500    21500    21500    21500    21500    21500    21500    21500      0.0
+    Path RTT                22000    22000    22000    22000    22000    22000    22000    22000      0.0
+
+    pair (abs diff us)           mean   median      p95      max      mean%    med%    p95%      corr
+    --------------------------------------------------------------------------------------------------------
+    srtt vs gp_srtt               500      500      500      500      2.35%   2.35%   2.35%   1.00000
+    srtt vs path_rtt             1000     1000     1000     1000      4.65%   4.65%   4.65%   1.00000
+    gp_srtt vs path_rtt           500      500      500      500      2.30%   2.30%   2.30%   1.00000
+
+  Session 0x1001  remote=10.0.0.1:443            samples=20  duration=0.2s
+    metric (us)               min      p25      p50      p75      p95      p99      max     mean   stddev
+    --------------------------------------------------------------------------------------------------------
+    Smoothed RTT            21000    21000    21000    21000    21000    21000    21000    21000      0.0
+    GP Smoothed RTT         21500    21500    21500    21500    21500    21500    21500    21500      0.0
+    Path RTT                22000    22000    22000    22000    22000    22000    22000    22000      0.0
+
+    pair (abs diff us)           mean   median      p95      max      mean%    med%    p95%      corr
+    --------------------------------------------------------------------------------------------------------
+    srtt vs gp_srtt               500      500      500      500      2.35%   2.35%   2.35%   1.00000
+    srtt vs path_rtt             1000     1000     1000     1000      4.65%   4.65%   4.65%   1.00000
+    gp_srtt vs path_rtt           500      500      500      500      2.30%   2.30%   2.30%   1.00000
+
+
+--- Aggregate Analysis (2 sessions, 40 total samples) ---
+
+    metric (us)               min      p25      p50      p75      p95      p99      max     mean   stddev
+    --------------------------------------------------------------------------------------------------------
+    Smoothed RTT            21000    21000    21000    21000    21000    21000    21000    21000      0.0
+    GP Smoothed RTT         21500    21500    21500    21500    21500    21500    21500    21500      0.0
+    Path RTT                22000    22000    22000    22000    22000    22000    22000    22000      0.0
+
+    pair (abs diff us)           mean   median      p95      max      mean%    med%    p95%      corr
+    --------------------------------------------------------------------------------------------------------
+    srtt vs gp_srtt               500      500      500      500      2.35%   2.35%   2.35%   1.00000
+    srtt vs path_rtt             1000     1000     1000     1000      4.65%   4.65%   4.65%   1.00000
+    gp_srtt vs path_rtt           500      500      500      500      2.30%   2.30%   2.30%   1.00000
+
+--- Per-Session Divergence Distribution (mean % diff per session) ---
+
+    pair                          p25      p50      p75      p95      max
+    --------------------------------------------------------------------
+    srtt vs gp_srtt             2.35%    2.35%    2.35%    2.35%    2.35%
+    srtt vs path_rtt            4.65%    4.65%    4.65%    4.65%    4.65%
+    gp_srtt vs path_rtt         2.30%    2.30%    2.30%    2.30%    2.30%
+
+--- Per-Session Correlation Distribution (Pearson r) ---
+
+    pair                          min       p5      p25      p50      p75
+    --------------------------------------------------------------------
+    srtt vs gp_srtt           1.00000  1.00000  1.00000  1.00000  1.00000
+    srtt vs path_rtt          1.00000  1.00000  1.00000  1.00000  1.00000
+    gp_srtt vs path_rtt       1.00000  1.00000  1.00000  1.00000  1.00000
+
+--- Collapsibility Verdict ---
+
+  srtt vs gp_srtt:
+    aggregate: median_diff=2.35%, p95_diff=2.35%, corr=1.00000
+    per-session p95 mean_diff=2.35%, per-session p5 corr=1.00000
+    => SIMILAR - minor divergence, collapsible with small accuracy loss
+
+  srtt vs path_rtt:
+    aggregate: median_diff=4.65%, p95_diff=4.65%, corr=1.00000
+    per-session p95 mean_diff=4.65%, per-session p5 corr=1.00000
+    => SIMILAR - minor divergence, collapsible with small accuracy loss
+
+  gp_srtt vs path_rtt:
+    aggregate: median_diff=2.30%, p95_diff=2.30%, corr=1.00000
+    per-session p95 mean_diff=2.30%, per-session p5 corr=1.00000
+    => SIMILAR - minor divergence, collapsible with small accuracy loss
+
+--- stderr ---

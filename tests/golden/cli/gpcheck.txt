@@ -1,0 +1,33 @@
+--- stdout ---
+=== File Info ===
+  version:         1
+  capture_start:   1000000 us
+  start_utc_us:    1700000000000000 us
+  events (header): 298
+  events (parsed): 298
+  skipped:         0
+  dropped:         0
+  providers:
+    id=1 name="tcp" events=262 first=0.000s last=0.400s
+    id=2 name="hpts" events=8 first=0.000s last=0.350s
+    id=3 name="cpu" events=19 first=0.000s last=0.220s
+    id=4 name="if" events=9 first=0.000s last=0.500s
+  sessions:        2
+  stars_agg_samples:8
+  stars_pace_samples:0
+  if_provider:     1 interfaces, 6 samples, 2 change events (period 100000 us)
+  tcp_samples:     1 stacks, 5 state, 5 rps, 5 goodput-hist, 0 pacing-rate-hist, 0 realized-rate-hist samples
+  cpu_samples:     12 (2 threads, 0 dropped)
+  cpu_symbols:     3 symbols across 1 linker files
+
+=== GP_CHECK events for session 0x1001, t=[0.000..179769313486231570814527423731704356798070567525844996598917476803157260780028538760589558632766878171540458953514382464234321326889464182768467546703537516986049910576551282076245490090389328944075868508455133942304583236903222948165808559332123348274797826204144723168738177180919299881250404026184124858368.000]s ===
+      time_s  reason  elapsed_ms     utim_ms          now_us        start_us     last_ack_us     srtt_us       bytes   min_bytes
+--------------------------------------------------------------------------------------------------------------------------------------------
+    0.0109s    OFF2    200.00ms    180.00ms         1020950         1020000         1020500       21000       50000       16000
+    0.0609s    OFF2    200.00ms    180.00ms         1070950         1070000         1070500       21000       50000       16000
+    0.1109s    OFF2    200.00ms    180.00ms         1120950         1120000         1120500       21000       50000       16000
+    0.1610s    OFF2    200.00ms    180.00ms         1170950         1170000         1170500       21000       50000       16000
+
+  Total GP_CHECK events: 4
+  OFF=0 OFF2=4 RECOV=0 TIME=0 BYTES=0 SAMPLE=0
+--- stderr ---

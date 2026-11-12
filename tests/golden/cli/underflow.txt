@@ -1,0 +1,56 @@
+--- stdout ---
+=== File Info ===
+  version:         1
+  capture_start:   1000000 us
+  start_utc_us:    1700000000000000 us
+  events (header): 298
+  events (parsed): 298
+  skipped:         0
+  dropped:         0
+  providers:
+    id=1 name="tcp" events=262 first=0.000s last=0.400s
+    id=2 name="hpts" events=8 first=0.000s last=0.350s
+    id=3 name="cpu" events=19 first=0.000s last=0.220s
+    id=4 name="if" events=9 first=0.000s last=0.500s
+  sessions:        2
+  stars_agg_samples:8
+  stars_pace_samples:0
+  if_provider:     1 interfaces, 6 samples, 2 change events (period 100000 us)
+  tcp_samples:     1 stacks, 5 state, 5 rps, 5 goodput-hist, 0 pacing-rate-hist, 0 realized-rate-hist samples
+  cpu_samples:     12 (2 threads, 0 dropped)
+  cpu_symbols:     3 symbols across 1 linker files
+
+=== RTT_UNDERFLOW events (2 total) ===
+     session           hdr_ts_us      time_s   cpu        us_rtt    minuend(a)     subtra(b)  where     overshoot
+-----------------------------------------------------------------------------------------------------------------------------
+      0x1001             1130000     0.120s     0           100           200           300      2    4294967196
+      0x2002             1140000     0.120s     0           100           200           300      2    4294967196
+
+=== Summary by 'where' location ===
+  where=2: 2 events
+    overshoot (b-a): min=4294967196 us (4294967.2 ms), avg=4294967196 us (4294967.2 ms), max=4294967196 us (4294967.2 ms)
+
+=== Operand Analysis (minuend=a, subtrahend=b, us_rtt=a-b underflowed) ===
+  where=2:
+    minuend  (a) range: [200 .. 200]
+    subtrahend(b) range: [300 .. 300]
+    b - a (how far b is ahead): min=100, median=100, max=100
+    b - a as ms: min=0.100, median=0.100, max=0.100
+
+=== Summary by session (top 20) ===
+  session 0x1001: 1 underflow events
+  session 0x2002: 1 underflow events
+
+=== Totals ===
+  Total underflow events: 2
+  Affected sessions:      2
+  Location codes:         [2]
+
+=== Per-session detail (first 5 events each, top 10 sessions) ===
+  --- session 0x1001 (1 underflows, t0=1010000) ---
+             hdr_ts_us      time_s   cpu        us_rtt    minuend(a)     subtra(b)  where      b-a (us)
+               1130000     0.120s     0           100           200           300      2           100
+  --- session 0x2002 (1 underflows, t0=1020000) ---
+             hdr_ts_us      time_s   cpu        us_rtt    minuend(a)     subtra(b)  where      b-a (us)
+               1140000     0.120s     0           100           200           300      2           100
+--- stderr ---
