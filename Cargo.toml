@@ -1,6 +1,6 @@
 [package]
 name = "event_explorer"
-version = "1.6.3"
+version = "1.6.4"
 edition = "2021"
 
 description = "Cross-platform binary log analyzer for FreeBSD EventLog (.elog) files with an egui desktop GUI and CLI."

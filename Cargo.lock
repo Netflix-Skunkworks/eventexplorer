@@ -1356,7 +1356,7 @@ dependencies = [
 
 [[package]]
 name = "event_explorer"
-version = "1.6.3"
+version = "1.6.4"
 dependencies = [
  "addr2line",
  "arboard",
