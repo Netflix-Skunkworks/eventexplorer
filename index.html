@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+    <title>EventExplorer</title>
+    <meta name="description" content="FreeBSD EventLog (.elog) analyzer running entirely in your browser." />
+    <link data-trunk rel="icon" href="assets/favicon-16.png" sizes="16x16" />
+    <link data-trunk rel="icon" href="assets/favicon-32.png" sizes="32x32" />
+    <link data-trunk rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+
+    <!-- Trunk picks up this hint and builds the parent crate as a wasm
+         target. `data-bin` is omitted so trunk uses the [lib] cdylib;
+         `data-cargo-features` and the matching --no-default-features in
+         Trunk.toml ensure the desktop bins (which require `native-bins`)
+         are skipped. -->
+    <link data-trunk rel="rust" data-wasm-opt="2" />
+
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      html[data-theme="light"] {
+        color-scheme: light;
+      }
+      html, body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        background: #1c1c1c;
+        color: #ddd;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        overflow: hidden;
+      }
+      html[data-theme="light"], html[data-theme="light"] body {
+        background: #f2f2f2;
+        color: #333;
+      }
+      #event_explorer_canvas {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+      }
+      #boot {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        pointer-events: none;
+        transition: opacity 200ms ease-out;
+      }
+      #boot.hidden {
+        opacity: 0;
+      }
+      #boot h1 {
+        margin: 0;
+        font-weight: 500;
+        font-size: 22px;
+        letter-spacing: 0.5px;
+      }
+      #boot p {
+        margin: 0;
+        font-size: 13px;
+        color: #888;
+      }
+      #ee-share-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 20;
+        display: flex;
+        align-items: flex-start;
+        justify-content: center;
+        padding-top: 60px;
+        background: rgba(0, 0, 0, 0.35);
+      }
+      #ee-share-overlay[hidden] {
+        display: none;
+      }
+      .ee-share-card {
+        width: min(560px, calc(100vw - 32px));
+        padding: 16px 18px 14px;
+        border-radius: 8px;
+        background: #2b2b2b;
+        color: #ddd;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+        font-size: 13px;
+      }
+      html[data-theme="light"] .ee-share-card {
+        background: #f7f7f7;
+        color: #222;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
+      }
+      .ee-share-card h2 {
+        margin: 0 0 8px;
+        font-size: 16px;
+        font-weight: 600;
+      }
+      .ee-share-card .ee-share-blurb {
+        margin: 0 0 10px;
+        font-size: 12px;
+        line-height: 1.4;
+        color: #b4b4b4;
+      }
+      html[data-theme="light"] .ee-share-card .ee-share-blurb {
+        color: #555;
+      }
+      #ee-share-url {
+        box-sizing: border-box;
+        width: 100%;
+        min-height: 4.5em;
+        margin: 0 0 10px;
+        padding: 8px;
+        resize: vertical;
+        border: 1px solid #555;
+        border-radius: 4px;
+        background: #1c1c1c;
+        color: #eee;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 12px;
+        line-height: 1.35;
+      }
+      html[data-theme="light"] #ee-share-url {
+        border-color: #ccc;
+        background: #fff;
+        color: #222;
+      }
+      .ee-share-row {
+        display: flex;
+        gap: 8px;
+      }
+      .ee-share-row button {
+        padding: 6px 12px;
+        border: 1px solid #666;
+        border-radius: 4px;
+        background: #3a3a3a;
+        color: #eee;
+        font-size: 13px;
+        cursor: pointer;
+      }
+      html[data-theme="light"] .ee-share-row button {
+        border-color: #bbb;
+        background: #fff;
+        color: #222;
+      }
+      .ee-share-row button:hover {
+        background: #4a4a4a;
+      }
+      html[data-theme="light"] .ee-share-row button:hover {
+        background: #eee;
+      }
+      .ee-upload-field {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: 0 0 8px;
+      }
+      .ee-upload-field label {
+        flex: 0 0 84px;
+        font-size: 12px;
+        color: #b4b4b4;
+      }
+      html[data-theme="light"] .ee-upload-field label {
+        color: #555;
+      }
+      .ee-upload-field input {
+        flex: 1;
+        min-width: 0;
+        padding: 6px 8px;
+        border: 1px solid #555;
+        border-radius: 4px;
+        background: #1c1c1c;
+        color: #eee;
+        font-size: 13px;
+      }
+      html[data-theme="light"] .ee-upload-field input {
+        border-color: #ccc;
+        background: #fff;
+        color: #222;
+      }
+      #ee-upload-progress {
+        width: 100%;
+        height: 10px;
+        margin: 10px 0 0;
+      }
+      #ee-upload-status {
+        margin: 8px 0 0;
+        font-size: 12px;
+        color: #b4b4b4;
+      }
+      html[data-theme="light"] #ee-upload-status {
+        color: #555;
+      }
+      #ee-upload-status.ee-upload-error {
+        color: #ff8a8a;
+      }
+      html[data-theme="light"] #ee-upload-status.ee-upload-error {
+        color: #c0392b;
+      }
+      .ee-share-row button[disabled] {
+        opacity: 0.5;
+        cursor: default;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="event_explorer_canvas"></canvas>
+    <div id="boot">
+      <h1>EventExplorer</h1>
+      <p>Loading wasm bundle…</p>
+    </div>
+
+    <!-- Share URL field in the DOM so the browser clipboard, Ctrl+C,
+         and the right-click Copy menu operate on it. -->
+    <div id="ee-share-overlay" hidden>
+      <div class="ee-share-card" role="dialog" aria-labelledby="ee-share-title">
+        <h2 id="ee-share-title">Share this view</h2>
+        <p class="ee-share-blurb">
+          Anyone opening this link will land on the same view of this capture:
+          same time window, same active session, and any non-default toggles
+          you've set.
+        </p>
+        <div id="ee-share-link">
+          <textarea id="ee-share-url" readonly rows="3"></textarea>
+          <div class="ee-share-row">
+            <button type="button" id="ee-share-copy">Copy to clipboard</button>
+            <button type="button" id="ee-share-close">Close</button>
+          </div>
+        </div>
+        <div id="ee-share-upload" hidden>
+          <p class="ee-share-blurb">
+            This capture was opened from your computer. Upload it to the
+            share server to get a link anyone with access can open.
+          </p>
+          <div class="ee-upload-field">
+            <label for="ee-upload-cache">Cache name</label>
+            <input id="ee-upload-cache" type="text" placeholder="host name" />
+          </div>
+          <div class="ee-upload-field">
+            <label for="ee-upload-note">Note</label>
+            <input id="ee-upload-note" type="text" placeholder="repro for ticket X (optional)" />
+          </div>
+          <div class="ee-share-row">
+            <button type="button" id="ee-upload-start">Upload to Share</button>
+            <button type="button" id="ee-upload-cancel">Cancel</button>
+          </div>
+          <progress id="ee-upload-progress" max="1000" value="0" hidden></progress>
+          <p id="ee-upload-status" hidden></p>
+        </div>
+      </div>
+    </div>
+    <script>
+      (function () {
+        const overlay = document.getElementById("ee-share-overlay");
+        const urlBox = document.getElementById("ee-share-url");
+        const copyBtn = document.getElementById("ee-share-copy");
+        const closeBtn = document.getElementById("ee-share-close");
+        const uploadBtn = document.getElementById("ee-upload-start");
+        const uploadCancel = document.getElementById("ee-upload-cancel");
+        const copyLabel = "Copy to clipboard";
+        function requestClose() {
+          overlay.dataset.close = "1";
+        }
+        function copied() {
+          copyBtn.textContent = "Copied";
+          setTimeout(function () {
+            copyBtn.textContent = copyLabel;
+          }, 1500);
+        }
+        function copyFallback() {
+          urlBox.focus();
+          urlBox.select();
+          try {
+            if (document.execCommand("copy")) copied();
+          } catch (_) {}
+        }
+        copyBtn.addEventListener("click", function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          const text = urlBox.value;
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(copied, copyFallback);
+          } else {
+            copyFallback();
+          }
+        });
+        closeBtn.addEventListener("click", function (e) {
+          e.stopPropagation();
+          requestClose();
+        });
+        // The wasm app reads the click (and the field values) on its
+        // next frame and drives the upload itself.
+        uploadBtn.addEventListener("click", function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          overlay.dataset.upload = "1";
+        });
+        uploadCancel.addEventListener("click", function (e) {
+          e.stopPropagation();
+          requestClose();
+        });
+        overlay.addEventListener("click", function (e) {
+          if (e.target === overlay) requestClose();
+        });
+      })();
+    </script>
+
+    <script type="module">
+      // Trunk auto-injects a wasm-init module into <head> that
+      // initialises the wasm bundle, attaches the bindings to
+      // `window.wasmBindings`, and fires `TrunkApplicationStarted`.
+      // We just consume that event and call into our exported
+      // WebHandle.
+      addEventListener("error", (event) => {
+        const msg = String(event.message || "");
+        if (!/unreachable|out of memory|memory access out of bounds/i.test(msg)) {
+          return;
+        }
+        const boot = document.getElementById("boot");
+        boot.classList.remove("hidden");
+        boot.innerHTML =
+          "<h1>EventExplorer</h1><p style='color:#e57'>The browser tab ran out of memory loading this capture. Open it in the desktop app.</p>";
+      });
+      addEventListener("TrunkApplicationStarted", async () => {
+        try {
+          const handle = new wasmBindings.WebHandle();
+          await handle.start("event_explorer_canvas");
+        } catch (e) {
+          console.error("EventExplorer failed to start:", e);
+          document.getElementById("boot").innerHTML =
+            "<h1>EventExplorer</h1><p style='color:#e57'>Failed to start (see console).</p>";
+          return;
+        }
+        document.getElementById("boot").classList.add("hidden");
+      });
+    </script>
+  </body>
+</html>

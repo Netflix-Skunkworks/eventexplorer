@@ -1,0 +1,117 @@
+[package]
+name = "event_explorer"
+version = "1.6.3"
+edition = "2021"
+
+description = "Cross-platform binary log analyzer for FreeBSD EventLog (.elog) files with an egui desktop GUI and CLI."
+authors = ["Netflix, Inc."]
+license = "Apache-2.0"
+readme = "README.md"
+keywords = ["freebsd", "eventlog", "tcp", "elog", "egui"]
+categories = ["visualization", "command-line-utilities", "parser-implementations"]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+path = "src/lib.rs"
+
+# The two desktop binaries are gated behind `native-bins` so a `trunk build`
+# (which passes --no-default-features) skips them and only emits the cdylib.
+# `cargo build --release` on native still works as before because
+# `native-bins` is in `default`.
+[[bin]]
+name = "event_explorer"
+path = "src/main.rs"
+required-features = ["native-bins"]
+
+[[bin]]
+name = "elog_cli"
+path = "src/cli.rs"
+required-features = ["native-bins"]
+
+[features]
+default = ["native-bins"]
+native-bins = []
+
+[dependencies]
+# Cross-platform deps (work on native and wasm32-unknown-unknown).
+eframe = "0.27"
+egui_extras = "0.27"
+egui_plot = "0.27"
+flate2 = "1"
+rustc-hash = "2"
+# JSON for the share-server uploads API (request bodies, response
+# records). Pure-Rust, wasm32-compatible.
+serde_json = "1"
+# Verifies a v2 capture's embedded decode-blob schema_id (SHA-256 of the
+# blob, truncated) before trusting it — see src/elog_parser/schema.rs.
+# Pure-Rust, wasm32-compatible.
+sha2 = "0.10"
+# `web-time` is a drop-in replacement for `std::time::Instant`/`Duration`
+# that works on wasm32-unknown-unknown (where `Instant::now` panics).
+web-time = "1"
+
+# Native-only deps — anything that touches filesystem paths,
+# threads-with-real-parallelism, desktop state, or X11.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+memmap2 = "0.9"
+rayon = "1"
+dirs = "5"
+arboard = { version = "3.6", default-features = false }
+# Used to spool decompressed/downloaded captures to disk and mmap them,
+# rather than buffering multi-GB payloads on the heap.
+tempfile = "3"
+image = { version = "0.24", default-features = false, features = ["png"] }
+# Annotated source tabs resolve sampled file offsets through the exact local
+# ELF/DWARF image after validating its captured build id.
+object = { version = "0.36", features = ["read_core", "elf", "compression"] }
+gimli = { version = "0.31", default-features = false, features = ["read"] }
+addr2line = { version = "0.24", default-features = false }
+
+# macOS system APIs; these versions are already used by the GUI dependencies.
+[target.'cfg(target_os = "macos")'.dependencies]
+core-graphics = "0.23"
+libc = "0.2"
+
+# Wasm-only deps — `wasm-bindgen` for JS interop, `rfd` for the async
+# file picker (uses <input type="file"> under the hood on web), and the
+# usual panic-hook + console-log crates.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+console_error_panic_hook = "0.1"
+log = "0.4"
+js-sys = "0.3"
+# Browser interop for the URL-driven auto-load feature: read
+# `window.location.search` for a `?file=…` parameter and fetch that
+# URL via XMLHttpRequest (progress events without wasm stream copies).
+# The selected feature set covers exactly the types the auto-load path
+# needs.
+web-sys = { version = "0.3", features = [
+    "Window",
+    "Location",
+    "UrlSearchParams",
+    "console",
+    "XmlHttpRequest",
+    "XmlHttpRequestEventTarget",
+    "XmlHttpRequestResponseType",
+    "XmlHttpRequestUpload",
+    "Blob",
+    "File",
+    "ProgressEvent",
+    "Document",
+    "Element",
+    "Storage",
+    "History",
+    "EventTarget",
+] }
+# Use rfd with its default features even on wasm — see the long
+# explanation: rfd 0.15's `build.rs` only special-cases macOS and
+# Windows, and falls through to a panic on `wasm32-unknown-unknown`
+# (target_os="unknown") unless either `xdg-portal` or `gtk3` is
+# enabled. The xdg-portal-only deps (`ashpd`, `pollster`,
+# `urlencoding`) are themselves cfg-gated to Linux/BSD in rfd's own
+# Cargo.toml, so they don't actually get compiled into the wasm
+# bundle. On web, rfd routes through its `web-sys`-based
+# AsyncFileDialog implementation. `file-handle-inner` exposes the
+# picked `web_sys::File` so the Share overlay can upload it.
+rfd = { version = "0.15", features = ["file-handle-inner"] }

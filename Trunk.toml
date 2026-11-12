@@ -1,0 +1,28 @@
+# Trunk configuration for the wasm/browser build.
+#
+# `no_default_features = true` disables the `native-bins` feature, which
+# excludes `[[bin]] event_explorer` and `[[bin]] elog_cli` from the wasm
+# build (trunk only needs the cdylib from `src/lib.rs`).
+#
+# `release = true` is critical for performance — a debug-mode wasm
+# bundle of an egui app is unusably slow.
+[core]
+dist = "dist"
+
+[build]
+target = "index.html"
+release = true
+no_default_features = true
+# Emit asset URLs relative to the current document (`./event_…js`,
+# `./event_…_bg.wasm`) instead of trunk's default server-absolute
+# (`/event_…js`). With `/`, the bundle only works when served at the
+# root of a host; with `./` it works under any subpath, including
+# user-dir hosting like `http://host/~user/eventexplorer/` and
+# nested deploy paths. Override with `--public-url <prefix>` if you
+# need a fixed prefix instead.
+public_url = "./"
+
+[serve]
+addresses = ["127.0.0.1"]
+port = 8080
+open = false

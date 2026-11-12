@@ -1,0 +1,26 @@
+--- stdout ---
+=== File Info ===
+  version:         1
+  capture_start:   1000000 us
+  start_utc_us:    1700000000000000 us
+  events (header): 298
+  events (parsed): 298
+  skipped:         0
+  dropped:         0
+  providers:
+    id=1 name="tcp" events=262 first=0.000s last=0.400s
+    id=2 name="hpts" events=8 first=0.000s last=0.350s
+    id=3 name="cpu" events=19 first=0.000s last=0.220s
+    id=4 name="if" events=9 first=0.000s last=0.500s
+  sessions:        2
+  stars_agg_samples:8
+  stars_pace_samples:0
+  if_provider:     1 interfaces, 6 samples, 2 change events (period 100000 us)
+  tcp_samples:     1 stacks, 5 state, 5 rps, 5 goodput-hist, 0 pacing-rate-hist, 0 realized-rate-hist samples
+  cpu_samples:     12 (2 threads, 0 dropped)
+  cpu_symbols:     3 symbols across 1 linker files
+
+tcp_input+0x10;tcp_output+0x80;ip_output+0x50 4
+tcp_input+0x40;tcp_output+0x90 8
+--- stderr ---
+# 12 samples after filter — 3 kernel syms / 1 linker files — 0 user syms / 0 user files / 0 proc maps — aggregated by PC

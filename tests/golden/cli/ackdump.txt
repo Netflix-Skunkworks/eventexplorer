@@ -1,0 +1,78 @@
+--- stdout ---
+=== File Info ===
+  version:         1
+  capture_start:   1000000 us
+  start_utc_us:    1700000000000000 us
+  events (header): 298
+  events (parsed): 298
+  skipped:         0
+  dropped:         0
+  providers:
+    id=1 name="tcp" events=262 first=0.000s last=0.400s
+    id=2 name="hpts" events=8 first=0.000s last=0.350s
+    id=3 name="cpu" events=19 first=0.000s last=0.220s
+    id=4 name="if" events=9 first=0.000s last=0.500s
+  sessions:        2
+  stars_agg_samples:8
+  stars_pace_samples:0
+  if_provider:     1 interfaces, 6 samples, 2 change events (period 100000 us)
+  tcp_samples:     1 stacks, 5 state, 5 rps, 5 goodput-hist, 0 pacing-rate-hist, 0 realized-rate-hist samples
+  cpu_samples:     12 (2 threads, 0 dropped)
+  cpu_symbols:     3 symbols across 1 linker files
+
+=== ACK/Goodput dump for session 0x1001, t=[0.000..1000.000]s ===
+      time_s    type          detail     bytes_ack    delta_ms     srtt_us        cwnd
+------------------------------------------------------------------------------------------
+    0.0100s     OUT  seq=1000 len=1460
+    0.0105s     ACK  acked=1460     una=1000         inflt=7300          0.50ms           0           0
+    0.0109s      GP  gp=192.0Mb raw=208.0Mb utim=200.0ms
+    0.0109s   GPCHK  reason=OFF2   elapsed=200.00ms utim=180.00ms now=1020950 start=1020000 last_ack=1020500 srtt=21000us bytes=50000 min=16000
+    0.0200s     OUT  seq=3920 len=1460
+    0.0205s     ACK  acked=1460     una=2460         inflt=7300          0.50ms       21000       16060
+    0.0300s     OUT  seq=6840 len=1460
+    0.0305s     ACK  acked=1460     una=3920         inflt=7300          0.50ms       21000       17520
+    0.0400s     OUT  seq=9760 len=1460
+    0.0405s     ACK  acked=1460     una=5380         inflt=7300          0.40ms       21000       18980
+    0.0500s     OUT  seq=12680 len=1460
+    0.0505s     ACK  acked=1460     una=6840         inflt=7300          0.50ms       21000       20440
+    0.0600s     OUT  seq=15600 len=1460
+    0.0605s     ACK  acked=1460     una=8300         inflt=7300          0.50ms       21000       21900
+    0.0609s      GP  gp=192.0Mb raw=208.0Mb utim=200.0ms
+    0.0609s   GPCHK  reason=OFF2   elapsed=200.00ms utim=180.00ms now=1070950 start=1070000 last_ack=1070500 srtt=21000us bytes=50000 min=16000
+    0.0700s     OUT  seq=18520 len=1460
+    0.0705s     ACK  acked=1460     una=9760         inflt=7300          0.50ms       21000       23360
+    0.0800s     OUT  seq=21440 len=1460
+    0.0805s     ACK  acked=1460     una=11220        inflt=7300          0.10ms       21000       24820
+    0.0900s     OUT  seq=24360 len=1460
+    0.0905s     ACK  acked=1460     una=12680        inflt=7300          0.50ms       21000       26280
+    0.1000s     OUT  seq=27280 len=1460
+    0.1005s     ACK  acked=1460     una=14140        inflt=7300          0.50ms       21000       27740
+    0.1100s     OUT  seq=30200 len=1460
+    0.1105s     ACK  acked=1460     una=15600        inflt=7300          0.50ms       21000       29200
+    0.1109s      GP  gp=192.0Mb raw=208.0Mb utim=200.0ms
+    0.1109s   GPCHK  reason=OFF2   elapsed=200.00ms utim=180.00ms now=1120950 start=1120000 last_ack=1120500 srtt=21000us bytes=50000 min=16000
+    0.1200s     OUT  seq=33120 len=1460
+    0.1205s     ACK  acked=1460     una=17060        inflt=7300          0.50ms       21000       30660
+    0.1240s     ACK  acked=1460     una=30200        inflt=5840          1.00ms       21000       32120
+    0.1300s     OUT  seq=36040 len=1460
+    0.1305s     ACK  acked=1460     una=18520        inflt=7300          0.50ms       21000       32120
+    0.1400s     OUT  seq=38960 len=1460
+    0.1405s     ACK  acked=1460     una=19980        inflt=7300          0.50ms       21000       33580
+    0.1500s     OUT  seq=41880 len=1460
+    0.1505s     ACK  acked=1460     una=21440        inflt=7300          0.50ms       21000       35040
+    0.1600s     OUT  seq=44800 len=1460
+    0.1605s     ACK  acked=1460     una=22900        inflt=7300          0.50ms       21000       36500
+    0.1609s      GP  gp=192.0Mb raw=208.0Mb utim=200.0ms
+    0.1610s   GPCHK  reason=OFF2   elapsed=200.00ms utim=180.00ms now=1170950 start=1170000 last_ack=1170500 srtt=21000us bytes=50000 min=16000
+    0.1700s     OUT  seq=47720 len=1460
+    0.1705s     ACK  acked=1460     una=24360        inflt=7300          0.50ms       21000       37960
+    0.1800s     OUT  seq=50640 len=1460
+    0.1805s     ACK  acked=1460     una=25820        inflt=7300          0.50ms       21000       39420
+    0.1900s     OUT  seq=53560 len=1460
+    0.1905s     ACK  acked=1460     una=27280        inflt=7300          0.50ms       21000       40880
+    0.2000s     OUT  seq=56480 len=1460
+    0.2005s     ACK  acked=1460     una=28740        inflt=7300          0.50ms       21000       42340
+
+  ACKs in range: 21
+  ACK gaps > 50ms: 0
+--- stderr ---
