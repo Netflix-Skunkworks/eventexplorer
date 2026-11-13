@@ -1256,6 +1256,7 @@ pub fn ella_relay_has_hardcoded_decoder(event_id: u32) -> bool {
         event_id,
         EVT_ELLA_RELAY_INSTANCE_ATTACH
             | EVT_ELLA_RELAY_NODE_INFO
+            | EVT_ELLA_RELAY_NODE_IDENTITY
             | EVT_ELLA_RELAY_RELAY_ERROR
             | EVT_ELLA_RELAY_SESSION_CREATE
             | EVT_ELLA_RELAY_SESSION_DESTROY
@@ -1265,6 +1266,8 @@ pub fn ella_relay_has_hardcoded_decoder(event_id: u32) -> bool {
             | EVT_ELLA_RELAY_CHANNEL_DESTROYED
             | EVT_ELLA_RELAY_CHANNEL_SUBSCRIBER
             | EVT_ELLA_RELAY_SUBSCRIBER_IDENTITY
+            | EVT_ELLA_RELAY_SUBSCRIBER_JOIN
+            | EVT_ELLA_RELAY_SUBSCRIBER_LEAVE
             | EVT_ELLA_RELAY_CHANNEL_COUNT
             | EVT_ELLA_RELAY_CHANNEL_COUNT_TOTAL
             | EVT_ELLA_RELAY_CHANNEL_SAMPLE
@@ -1290,6 +1293,10 @@ pub static ELLA_RELAY_EXPECTED: &[ExpectedEvent] = &[
     ExpectedEvent {
         event_id: EVT_ELLA_RELAY_NODE_INFO,
         fields: &[ExpectedField::new("role", 0, 1)],
+    },
+    ExpectedEvent {
+        event_id: EVT_ELLA_RELAY_NODE_IDENTITY,
+        fields: &[ExpectedField::new("relay_id", 0, 4)],
     },
     ExpectedEvent {
         event_id: EVT_ELLA_RELAY_RELAY_ERROR,
@@ -1424,6 +1431,32 @@ pub static ELLA_RELAY_EXPECTED: &[ExpectedEvent] = &[
             ExpectedField::new("subscriber_address", 10, 16),
             ExpectedField::new("pbcid_len", 26, 1),
             ExpectedField::varlen("pbcid", 27),
+        ],
+    },
+    ExpectedEvent {
+        event_id: EVT_ELLA_RELAY_SUBSCRIBER_JOIN,
+        fields: &[
+            ExpectedField::new("instance_id", 0, 4),
+            ExpectedField::new("sub_id", 4, 4),
+            ExpectedField::new("request_id", 8, 4),
+            ExpectedField::new("subscriber_port", 12, 2),
+            ExpectedField::new("subscriber_address", 14, 16),
+            ExpectedField::new("pending_ms", 30, 2),
+            ExpectedField::new("replay", 32, 1),
+            ExpectedField::new("pbcid_len", 33, 1),
+            ExpectedField::varlen("pbcid", 34),
+        ],
+    },
+    ExpectedEvent {
+        event_id: EVT_ELLA_RELAY_SUBSCRIBER_LEAVE,
+        fields: &[
+            ExpectedField::new("instance_id", 0, 4),
+            ExpectedField::new("sub_id", 4, 4),
+            ExpectedField::new("reason", 8, 1),
+            ExpectedField::new("duration_ms", 9, 4),
+            ExpectedField::new("packets", 13, 4),
+            ExpectedField::new("bytes", 17, 8),
+            ExpectedField::new("objects", 25, 4),
         ],
     },
     ExpectedEvent {

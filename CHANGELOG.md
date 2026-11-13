@@ -6,6 +6,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- ELLA `fanout_node` `SUBSCRIBER_JOIN` (103) / `SUBSCRIBER_LEAVE` (104)
+  and `NODE_IDENTITY` (4) decode, with `ellaevents` detail. Channel and
+  title subscriber occupancy count JOIN/LEAVE per (session, instance,
+  sub id); a state-dump replay counts only for a subscription not
+  already live. Older captures' `CHANNEL_SUBSCRIBER` still decode.
+
 ## [1.6.3] - 2026-11-12
 
 ### Added

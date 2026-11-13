@@ -473,6 +473,7 @@ fn merge_ella(dst: &mut EllaProfile, src: EllaProfile) {
         offload_samples,
         instances,
         roles,
+        live_subs,
     } = src;
 
     for (key, channel) in channels {
@@ -491,6 +492,7 @@ fn merge_ella(dst: &mut EllaProfile, src: EllaProfile) {
     append_by_ts(&mut dst.offload_samples, offload_samples, |s| s.ts);
     dst.instances.extend(instances);
     dst.roles.extend(roles);
+    dst.live_subs.extend(live_subs);
 }
 
 /// Fold a later file's view of a channel into the earlier one. A channel

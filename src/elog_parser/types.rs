@@ -637,6 +637,9 @@ pub enum EllaPayload {
     NodeInfo {
         role: u8,
     },
+    NodeIdentity {
+        relay_id: u32,
+    },
     SessionCreate {
         channel_name: String,
         version: u8,
@@ -674,6 +677,27 @@ pub enum EllaPayload {
         subscriber_address: String,
         subscriber_port: u16,
         pbcid: String,
+    },
+    /// A subscription going live; `replay` marks a state-dump re-emit.
+    SubscriberJoin {
+        instance_id: u32,
+        sub_id: u32,
+        request_id: u32,
+        subscriber_address: String,
+        subscriber_port: u16,
+        pending_ms: u16,
+        replay: bool,
+        pbcid: String,
+    },
+    /// End of the `SubscriberJoin` with the same `instance_id` / `sub_id`.
+    SubscriberLeave {
+        instance_id: u32,
+        sub_id: u32,
+        reason: u8,
+        duration_ms: u32,
+        packets: u32,
+        bytes: u64,
+        objects: u32,
     },
     ObjectState {
         state: u8,
@@ -827,6 +851,9 @@ pub struct EllaProfile {
     /// `provider_id → role` from `NODE_INFO`, the producer's own
     /// declaration of what it is.
     pub roles: FxHashMap<u16, u8>,
+    /// Live `(provider_id, session_id, instance_id, sub_id)` from
+    /// SUBSCRIBER_JOIN / SUBSCRIBER_LEAVE.
+    pub live_subs: FxHashSet<(u16, u64, u32, u32)>,
 }
 
 impl EllaProfile {

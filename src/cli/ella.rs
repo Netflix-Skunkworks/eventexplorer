@@ -21,6 +21,7 @@ fn payload_detail(p: &EllaPayload) -> String {
             format!("instance={instance_id} side={}", ella_side_name(*side))
         }
         EllaPayload::NodeInfo { role } => format!("role={}", ella_role_name(*role)),
+        EllaPayload::NodeIdentity { relay_id } => format!("relay_id={relay_id}"),
         EllaPayload::SessionCreate {
             channel_name,
             version,
@@ -69,6 +70,31 @@ fn payload_detail(p: &EllaPayload) -> String {
             pbcid,
         } => format!(
             "instance={instance_id} request={request_id} {subscriber_address}:{subscriber_port} pbcid={pbcid}"
+        ),
+        EllaPayload::SubscriberJoin {
+            instance_id,
+            sub_id,
+            request_id,
+            subscriber_address,
+            subscriber_port,
+            pending_ms,
+            replay,
+            pbcid,
+        } => format!(
+            "instance={instance_id} sub={sub_id} request={request_id} {subscriber_address}:{subscriber_port} pending_ms={pending_ms} replay={} pbcid={pbcid}",
+            *replay as u8
+        ),
+        EllaPayload::SubscriberLeave {
+            instance_id,
+            sub_id,
+            reason,
+            duration_ms,
+            packets,
+            bytes,
+            objects,
+        } => format!(
+            "instance={instance_id} sub={sub_id} reason={} duration_ms={duration_ms} packets={packets} bytes={bytes} objects={objects}",
+            ella_subscriber_reason_name(*reason)
         ),
         EllaPayload::ChannelError {
             code,

@@ -2720,6 +2720,7 @@ fn build_ella_channel_plot_from(
     let mut obj_ids: FxHashMap<u32, u32> = FxHashMap::default();
     let sampled = !src.samples.is_empty();
     let mut live_subs: FxHashSet<(u32, String, u16)> = FxHashSet::default();
+    let mut live_joins: FxHashSet<(u32, u32)> = FxHashSet::default();
 
     let mut push_marker = |t: f64, y: f64, kind: EllaChannelMarkerKind| {
         let tag = match kind {
@@ -2794,6 +2795,29 @@ fn build_ella_channel_plot_from(
                     ELLA_SUBSCRIBER_SUBSCRIBING => continue,
                     _ => continue,
                 }
+                subs.record(t, &occupancy, *instance_id, prof, provider_id);
+            }
+            EllaPayload::SubscriberJoin {
+                instance_id,
+                sub_id,
+                ..
+            } if !sampled => {
+                if !live_joins.insert((*instance_id, *sub_id)) {
+                    continue;
+                }
+                *occupancy.entry(*instance_id).or_insert(0) += 1;
+                subs.record(t, &occupancy, *instance_id, prof, provider_id);
+            }
+            EllaPayload::SubscriberLeave {
+                instance_id,
+                sub_id,
+                ..
+            } if !sampled => {
+                if !live_joins.remove(&(*instance_id, *sub_id)) {
+                    continue;
+                }
+                let n = occupancy.entry(*instance_id).or_insert(0);
+                *n = n.saturating_sub(1);
                 subs.record(t, &occupancy, *instance_id, prof, provider_id);
             }
             EllaPayload::ObjectState {
@@ -2913,6 +2937,7 @@ fn build_ella_channel_plot_from(
                 if !sampled {
                     occupancy.insert(*instance_id, 0);
                     live_subs.retain(|(inst, _, _)| *inst != *instance_id);
+                    live_joins.retain(|(inst, _)| *inst != *instance_id);
                     subs.record(t, &occupancy, *instance_id, prof, provider_id);
                 }
                 if obj_occupancy.contains_key(instance_id) {
@@ -3934,13 +3959,17 @@ fn payload_instance_id(p: &EllaPayload) -> Option<u32> {
         | EllaPayload::ChannelIdAssigned { instance_id, .. }
         | EllaPayload::ChannelSubscriber { instance_id, .. }
         | EllaPayload::SubscriberIdentity { instance_id, .. }
+        | EllaPayload::SubscriberJoin { instance_id, .. }
+        | EllaPayload::SubscriberLeave { instance_id, .. }
         | EllaPayload::ObjectState { instance_id, .. }
         | EllaPayload::ObjectTiming { instance_id, .. }
         | EllaPayload::FrameSent { instance_id, .. }
         | EllaPayload::FrameRelay { instance_id, .. }
         | EllaPayload::ChannelError { instance_id, .. }
         | EllaPayload::RelayError { instance_id, .. } => Some(*instance_id),
-        EllaPayload::SessionDestroy | EllaPayload::NodeInfo { .. } => None,
+        EllaPayload::SessionDestroy
+        | EllaPayload::NodeInfo { .. }
+        | EllaPayload::NodeIdentity { .. } => None,
     }
 }
 
@@ -3949,6 +3978,7 @@ fn channel_event_detail(p: &EllaPayload) -> String {
         EllaPayload::SessionCreate { version, .. } => format!("v{version}"),
         EllaPayload::SessionDestroy => String::new(),
         EllaPayload::NodeInfo { role } => ella_role_name(*role).to_string(),
+        EllaPayload::NodeIdentity { relay_id } => format!("relay id {relay_id}"),
         EllaPayload::ChannelState {
             state,
             reason,
@@ -4002,6 +4032,39 @@ fn channel_event_detail(p: &EllaPayload) -> String {
             pbcid,
             ..
         } => format!("{subscriber_address}:{subscriber_port}  request {request_id}  pbcid {pbcid}"),
+        EllaPayload::SubscriberJoin {
+            sub_id,
+            request_id,
+            subscriber_address,
+            subscriber_port,
+            pending_ms,
+            replay,
+            pbcid,
+            ..
+        } => {
+            let mut out = format!(
+                "JOIN  sub {sub_id}  {subscriber_address}:{subscriber_port}  request {request_id}  pending {pending_ms} ms"
+            );
+            if !pbcid.is_empty() {
+                out.push_str(&format!("  pbcid {pbcid}"));
+            }
+            if *replay {
+                out.push_str("  replay");
+            }
+            out
+        }
+        EllaPayload::SubscriberLeave {
+            sub_id,
+            reason,
+            duration_ms,
+            packets,
+            bytes,
+            objects,
+            ..
+        } => format!(
+            "LEAVE  sub {sub_id}  {}  {duration_ms} ms  {packets} pkts  {bytes} B  {objects} objs",
+            ella_subscriber_reason_name(*reason)
+        ),
         EllaPayload::ChannelError { code, detail, .. } => {
             format!("{}  detail {detail}", ella_error_code_name(*code))
         }
@@ -4123,7 +4186,10 @@ fn build_ella_channel_events_from(
         let t = e.ts.saturating_sub(t0_us) as f64 / 1_000_000.0;
         let is_join = matches!(
             e.payload,
-            EllaPayload::ChannelSubscriber { .. } | EllaPayload::SubscriberIdentity { .. }
+            EllaPayload::ChannelSubscriber { .. }
+                | EllaPayload::SubscriberIdentity { .. }
+                | EllaPayload::SubscriberJoin { .. }
+                | EllaPayload::SubscriberLeave { .. }
         );
         let is_object = matches!(e.payload, EllaPayload::ObjectState { .. });
         if let EllaPayload::ChannelState {
@@ -4386,13 +4452,13 @@ fn bump_title(
     push_step(pts.entry(title).or_default(), t, y);
 }
 
-fn drop_present(
-    present: &mut FxHashSet<(String, u16, u16, u64, u32)>,
+fn drop_present<K: Eq + std::hash::Hash>(
+    present: &mut FxHashSet<K>,
     pts: &mut FxHashMap<String, Vec<[f64; 2]>>,
     title_n: &mut FxHashMap<String, u32>,
     title: String,
     t: f64,
-    keep: impl Fn(&(String, u16, u16, u64, u32)) -> bool,
+    keep: impl Fn(&K) -> bool,
 ) {
     let before = present.len();
     present.retain(keep);
@@ -4428,7 +4494,10 @@ fn ella_subscription_pts(
 ) -> FxHashMap<String, Vec<[f64; 2]>> {
     let has_sub_events = prof.events.iter().any(|e| {
         pid_ok(provider_id, e.provider_id)
-            && matches!(e.payload, EllaPayload::ChannelSubscriber { .. })
+            && matches!(
+                e.payload,
+                EllaPayload::ChannelSubscriber { .. } | EllaPayload::SubscriberJoin { .. }
+            )
     });
     if !has_sub_events
         && prof
@@ -4681,6 +4750,7 @@ fn ella_subscription_pts_from_subscribers(
         names.insert((c.provider_id, c.session_id), label);
     }
     let mut present: FxHashSet<(String, u16, u16, u64, u32)> = FxHashSet::default();
+    let mut joined: FxHashSet<(u16, u64, u32, u32)> = FxHashSet::default();
     let mut title_n: FxHashMap<String, u32> = FxHashMap::default();
     let mut pts: FxHashMap<String, Vec<[f64; 2]>> = FxHashMap::default();
     let title_of = |names: &FxHashMap<(u16, u64), String>, e: &EllaEvent| {
@@ -4735,6 +4805,32 @@ fn ella_subscription_pts_from_subscribers(
                     _ => {}
                 }
             }
+            EllaPayload::SubscriberJoin {
+                instance_id,
+                sub_id,
+                subscriber_address,
+                ..
+            } => {
+                if is_loopback_addr(subscriber_address)
+                    || ella_side(prof, e.provider_id, *instance_id) == ELLA_SIDE_UPSTREAM
+                {
+                    continue;
+                }
+                if joined.insert((e.provider_id, e.session_id, *instance_id, *sub_id)) {
+                    let t = e.ts.saturating_sub(t0_us) as f64 / 1_000_000.0;
+                    bump_title(&mut pts, &mut title_n, title_of(&names, e), t, 1);
+                }
+            }
+            EllaPayload::SubscriberLeave {
+                instance_id,
+                sub_id,
+                ..
+            } => {
+                if joined.remove(&(e.provider_id, e.session_id, *instance_id, *sub_id)) {
+                    let t = e.ts.saturating_sub(t0_us) as f64 / 1_000_000.0;
+                    bump_title(&mut pts, &mut title_n, title_of(&names, e), t, -1);
+                }
+            }
             EllaPayload::ChannelDestroyed { instance_id, .. } => {
                 if ella_side(prof, e.provider_id, *instance_id) == ELLA_SIDE_UPSTREAM {
                     continue;
@@ -4751,6 +4847,14 @@ fn ella_subscription_pts_from_subscribers(
                     t,
                     |k| !(k.2 == pid && k.3 == sid && k.4 == inst),
                 );
+                drop_present(
+                    &mut joined,
+                    &mut pts,
+                    &mut title_n,
+                    title_of(&names, e),
+                    t,
+                    |k| !(k.0 == pid && k.1 == sid && k.2 == inst),
+                );
             }
             EllaPayload::SessionDestroy => {
                 let t = e.ts.saturating_sub(t0_us) as f64 / 1_000_000.0;
@@ -4763,6 +4867,14 @@ fn ella_subscription_pts_from_subscribers(
                     title_of(&names, e),
                     t,
                     |k| !(k.2 == pid && k.3 == sid),
+                );
+                drop_present(
+                    &mut joined,
+                    &mut pts,
+                    &mut title_n,
+                    title_of(&names, e),
+                    t,
+                    |k| !(k.0 == pid && k.1 == sid),
                 );
             }
             _ => {}
@@ -7297,6 +7409,7 @@ mod tests {
         match payload {
             EllaPayload::InstanceAttach { .. } => EVT_ELLA_RELAY_INSTANCE_ATTACH,
             EllaPayload::NodeInfo { .. } => EVT_ELLA_RELAY_NODE_INFO,
+            EllaPayload::NodeIdentity { .. } => EVT_ELLA_RELAY_NODE_IDENTITY,
             EllaPayload::SessionCreate { .. } => EVT_ELLA_RELAY_SESSION_CREATE,
             EllaPayload::SessionDestroy => EVT_ELLA_RELAY_SESSION_DESTROY,
             EllaPayload::ChannelState { .. } => EVT_ELLA_RELAY_CHANNEL_STATE,
@@ -7305,6 +7418,8 @@ mod tests {
             EllaPayload::ChannelDestroyed { .. } => EVT_ELLA_RELAY_CHANNEL_DESTROYED,
             EllaPayload::ChannelSubscriber { .. } => EVT_ELLA_RELAY_CHANNEL_SUBSCRIBER,
             EllaPayload::SubscriberIdentity { .. } => EVT_ELLA_RELAY_SUBSCRIBER_IDENTITY,
+            EllaPayload::SubscriberJoin { .. } => EVT_ELLA_RELAY_SUBSCRIBER_JOIN,
+            EllaPayload::SubscriberLeave { .. } => EVT_ELLA_RELAY_SUBSCRIBER_LEAVE,
             EllaPayload::ObjectState { .. } => EVT_ELLA_RELAY_OBJECT_STATE,
             EllaPayload::ObjectTiming { .. } => EVT_ELLA_RELAY_OBJECT_TIMING,
             EllaPayload::FrameSent { .. } => EVT_ELLA_RELAY_FRAME_SENT,
@@ -10191,6 +10306,102 @@ mod tests {
         assert_eq!(stack.series.len(), 1);
         assert!((occupancy_at(&stack.series[0].data, 1.5) - 1.0).abs() < 1e-9);
         assert!((occupancy_at(&stack.series[0].data, 2.5) - 0.0).abs() < 1e-9);
+    }
+
+    fn join_evt(ts: u64, inst: u32, sub_id: u32, replay: bool) -> EllaEvent {
+        ella_evt(
+            ts,
+            1,
+            EllaPayload::SubscriberJoin {
+                instance_id: inst,
+                sub_id,
+                request_id: 0,
+                subscriber_address: "10.0.0.1".into(),
+                subscriber_port: 9,
+                pending_ms: 0,
+                replay,
+                pbcid: String::new(),
+            },
+        )
+    }
+
+    fn leave_evt(ts: u64, inst: u32, sub_id: u32) -> EllaEvent {
+        ella_evt(
+            ts,
+            1,
+            EllaPayload::SubscriberLeave {
+                instance_id: inst,
+                sub_id,
+                reason: 1,
+                duration_ms: 0,
+                packets: 0,
+                bytes: 0,
+                objects: 0,
+            },
+        )
+    }
+
+    /// Replay of a live key is a no-op; replay of an unseen key counts; a
+    /// LEAVE for a key never joined is ignored, as UNSUBSCRIBED is.
+    fn join_leave_events() -> Vec<EllaEvent> {
+        vec![
+            ella_evt(
+                500_000,
+                1,
+                EllaPayload::SessionCreate {
+                    channel_name: "alpha".into(),
+                    version: 2,
+                    instance_id: 2,
+                },
+            ),
+            join_evt(1_000_000, 2, 1, false),
+            join_evt(1_500_000, 2, 1, true),
+            join_evt(2_000_000, 2, 2, true),
+            leave_evt(3_000_000, 2, 1),
+            leave_evt(3_500_000, 2, 9),
+        ]
+    }
+
+    #[test]
+    fn ella_channel_plot_occupancy_from_join_leave() {
+        let mut prof = EllaProfile::default();
+        prof.instances.insert((1, 2), ELLA_SIDE_DOWNSTREAM);
+        prof.events = join_leave_events();
+        let plot = build_ella_channel_plot(&prof, 1, 1, 0);
+        let d = &plot.subscribers[0].data;
+        for (t, want) in [(1.2, 1.0), (1.7, 1.0), (2.5, 2.0), (3.2, 1.0), (3.7, 1.0)] {
+            assert!((occupancy_at(d, t) - want).abs() < 1e-9, "t={t} {d:?}");
+        }
+    }
+
+    #[test]
+    fn ella_subscription_stack_from_join_leave() {
+        let mut prof = EllaProfile::default();
+        prof.instances.insert((1, 2), ELLA_SIDE_DOWNSTREAM);
+        prof.events = join_leave_events();
+        prof.events.push(ella_evt(
+            4_000_000,
+            1,
+            EllaPayload::ChannelDestroyed {
+                reason: 1,
+                instance_id: 2,
+                subscribers: 1,
+            },
+        ));
+        let stack = build_ella_subscription_stack(&prof, 0);
+        assert_eq!(stack.series.len(), 1);
+        assert_eq!(stack.series[0].label, "alpha");
+        let d = &stack.series[0].data;
+        for (t, want) in [
+            (1.2, 1.0),
+            (1.7, 1.0),
+            (2.5, 2.0),
+            (3.2, 1.0),
+            (3.7, 1.0),
+            (4.5, 0.0),
+        ] {
+            assert!((occupancy_at(d, t) - want).abs() < 1e-9, "t={t} {d:?}");
+        }
     }
 
     #[test]

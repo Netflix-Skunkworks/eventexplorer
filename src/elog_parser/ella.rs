@@ -64,6 +64,21 @@ pub fn ingest_ella_relay(
             );
             true
         }
+        EVT_ELLA_RELAY_NODE_IDENTITY if r.typed() || size >= 4 => {
+            push_event(
+                prof,
+                ts,
+                cpu,
+                tid,
+                provider_id,
+                session_id,
+                event_id,
+                EllaPayload::NodeIdentity {
+                    relay_id: r.u32("relay_id", 0),
+                },
+            );
+            true
+        }
         EVT_ELLA_RELAY_RELAY_ERROR if r.typed() || size >= 18 => {
             let (subscriber_address, subscriber_port) = if r.typed() {
                 (
@@ -277,6 +292,55 @@ pub fn ingest_ella_relay(
                     .map_or_else(|| addr.to_string(), |a| a.to_string()),
                 subscriber_port: r.u16("subscriber_port", 8),
                 pbcid: r.text("pbcid", 27, pbcid_len),
+            };
+            push_event(
+                prof,
+                ts,
+                cpu,
+                tid,
+                provider_id,
+                session_id,
+                event_id,
+                payload,
+            );
+            true
+        }
+        EVT_ELLA_RELAY_SUBSCRIBER_JOIN if r.typed() || size >= 34 => {
+            let addr = r.in6_addr("subscriber_address", 14);
+            let pbcid_len = r.u8("pbcid_len", 33) as usize;
+            let payload = EllaPayload::SubscriberJoin {
+                instance_id: r.u32("instance_id", 0),
+                sub_id: r.u32("sub_id", 4),
+                request_id: r.u32("request_id", 8),
+                subscriber_address: addr
+                    .to_ipv4_mapped()
+                    .map_or_else(|| addr.to_string(), |a| a.to_string()),
+                subscriber_port: r.u16("subscriber_port", 12),
+                pending_ms: r.u16("pending_ms", 30),
+                replay: r.u8("replay", 32) != 0,
+                pbcid: r.text("pbcid", 34, pbcid_len),
+            };
+            push_event(
+                prof,
+                ts,
+                cpu,
+                tid,
+                provider_id,
+                session_id,
+                event_id,
+                payload,
+            );
+            true
+        }
+        EVT_ELLA_RELAY_SUBSCRIBER_LEAVE if r.typed() || size >= 29 => {
+            let payload = EllaPayload::SubscriberLeave {
+                instance_id: r.u32("instance_id", 0),
+                sub_id: r.u32("sub_id", 4),
+                reason: r.u8("reason", 8),
+                duration_ms: r.u32("duration_ms", 9),
+                packets: r.u32("packets", 13),
+                bytes: r.u64("bytes", 17),
+                objects: r.u32("objects", 25),
             };
             push_event(
                 prof,
@@ -831,6 +895,8 @@ fn apply_to_channel(
             entry.destroy_reason = Some(*reason);
             entry.last_subscribers = *subscribers;
             entry.occ_by_inst.insert(*instance_id, 0);
+            prof.live_subs
+                .retain(|k| !(k.0 == provider_id && k.1 == session_id && k.2 == *instance_id));
         }
         EllaPayload::ChannelIdAssigned {
             instance_id,
@@ -855,6 +921,36 @@ fn apply_to_channel(
             if total > entry.peak_subscribers {
                 entry.peak_subscribers = total;
             }
+        }
+        // A replay for a key already live is a no-op; one for an unseen
+        // key predates the capture and counts from here.
+        EllaPayload::SubscriberJoin {
+            instance_id,
+            sub_id,
+            ..
+        } => {
+            let key = (provider_id, session_id, *instance_id, *sub_id);
+            if !prof.live_subs.insert(key) {
+                return;
+            }
+            let n = entry.occ_by_inst.entry(*instance_id).or_insert(0);
+            *n = n.saturating_add(1);
+            let total: u32 = entry.occ_by_inst.values().copied().sum();
+            entry.last_subscribers = total;
+            if total > entry.peak_subscribers {
+                entry.peak_subscribers = total;
+            }
+        }
+        EllaPayload::SubscriberLeave {
+            instance_id,
+            sub_id,
+            ..
+        } => {
+            prof.live_subs
+                .remove(&(provider_id, session_id, *instance_id, *sub_id));
+            let n = entry.occ_by_inst.entry(*instance_id).or_insert(0);
+            *n = n.saturating_sub(1);
+            entry.last_subscribers = entry.occ_by_inst.values().copied().sum();
         }
         _ => {}
     }
@@ -1846,5 +1942,199 @@ mod tests {
             }
             assert_eq!(prof.channels[&(6, 7)].occ_by_inst[&2], 0);
         }
+    }
+
+    fn join_payload(sub_id: u32, replay: u8, pbcid: &[u8]) -> Vec<u8> {
+        let mut b = Vec::new();
+        b.extend_from_slice(&2u32.to_le_bytes());
+        b.extend_from_slice(&sub_id.to_le_bytes());
+        b.extend_from_slice(&77u32.to_le_bytes());
+        b.extend_from_slice(&5000u16.to_le_bytes());
+        b.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff, 192, 0, 2, 7]);
+        b.extend_from_slice(&40u16.to_le_bytes());
+        b.push(replay);
+        b.push(pbcid.len() as u8);
+        assert_eq!(b.len(), 34);
+        b.extend_from_slice(pbcid);
+        b
+    }
+
+    fn leave_payload(sub_id: u32) -> Vec<u8> {
+        let mut b = Vec::new();
+        b.extend_from_slice(&2u32.to_le_bytes());
+        b.extend_from_slice(&sub_id.to_le_bytes());
+        b.push(2);
+        b.extend_from_slice(&1500u32.to_le_bytes());
+        b.extend_from_slice(&300u32.to_le_bytes());
+        b.extend_from_slice(&7_000_000_000u64.to_le_bytes());
+        b.extend_from_slice(&12u32.to_le_bytes());
+        assert_eq!(b.len(), 29);
+        b
+    }
+
+    #[test]
+    fn subscriber_join_leave_offsets() {
+        let mut prof = EllaProfile::default();
+        let join = join_payload(5, 1, b"pbc-42");
+        assert!(ingest(&mut prof, 7, EVT_ELLA_RELAY_SUBSCRIBER_JOIN, &join));
+        assert!(ingest(
+            &mut prof,
+            7,
+            EVT_ELLA_RELAY_SUBSCRIBER_LEAVE,
+            &leave_payload(5)
+        ));
+        match &prof.events[0].payload {
+            EllaPayload::SubscriberJoin {
+                instance_id,
+                sub_id,
+                request_id,
+                subscriber_address,
+                subscriber_port,
+                pending_ms,
+                replay,
+                pbcid,
+            } => {
+                assert_eq!((*instance_id, *sub_id, *request_id), (2, 5, 77));
+                assert_eq!(subscriber_address, "192.0.2.7");
+                assert_eq!((*subscriber_port, *pending_ms), (5000, 40));
+                assert!(*replay);
+                assert_eq!(pbcid, "pbc-42");
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+        match &prof.events[1].payload {
+            EllaPayload::SubscriberLeave {
+                instance_id,
+                sub_id,
+                reason,
+                duration_ms,
+                packets,
+                bytes,
+                objects,
+            } => {
+                assert_eq!((*instance_id, *sub_id, *reason), (2, 5, 2));
+                assert_eq!((*duration_ms, *packets), (1500, 300));
+                assert_eq!((*bytes, *objects), (7_000_000_000, 12));
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+
+    #[test]
+    fn subscriber_join_schema_varlen_pbcid() {
+        use crate::elog_parser::schema::test_support::{build_blob, FieldSpec};
+        let schema = ProviderSchema::parse(&build_blob(
+            "fanout_node",
+            "SUBSCRIBER_JOIN",
+            vec![
+                FieldSpec::scalar("instance_id", DECODE_TYPE_U32, 0),
+                FieldSpec::scalar("sub_id", DECODE_TYPE_U32, 4),
+                FieldSpec::scalar("request_id", DECODE_TYPE_U32, 8),
+                FieldSpec::scalar("subscriber_port", DECODE_TYPE_U16, 12),
+                FieldSpec::scalar("subscriber_address", DECODE_TYPE_IN6_ADDR, 14),
+                FieldSpec::scalar("pending_ms", DECODE_TYPE_U16, 30),
+                FieldSpec::scalar("replay", DECODE_TYPE_U8, 32),
+                FieldSpec::scalar("pbcid_len", DECODE_TYPE_U8, 33),
+                FieldSpec::varlen("pbcid", DECODE_TYPE_U8, 34, 8, 128),
+            ],
+            EVT_ELLA_RELAY_SUBSCRIBER_JOIN,
+            "SUBSCRIBER_JOIN",
+            "",
+        ))
+        .unwrap();
+        let b = join_payload(5, 0, b"pbc-42");
+        let mut prof = EllaProfile::default();
+        assert!(ingest_ella_relay(
+            &mut prof,
+            1,
+            0,
+            0,
+            6,
+            7,
+            EVT_ELLA_RELAY_SUBSCRIBER_JOIN,
+            &b,
+            0,
+            b.len(),
+            Some(&schema),
+        ));
+        assert!(matches!(
+            &prof.events[0].payload,
+            EllaPayload::SubscriberJoin {
+                sub_id: 5,
+                replay: false,
+                pbcid,
+                ..
+            } if pbcid == "pbc-42"
+        ));
+        assert_eq!(prof.channels[&(6, 7)].occ_by_inst[&2], 1);
+    }
+
+    /// A replay for a live key holds occupancy; one for an unseen key
+    /// (joined before the capture) counts. A LEAVE for a key never seen
+    /// still decrements, as UNSUBSCRIBED does here.
+    #[test]
+    fn subscriber_join_replay_and_leave_occupancy() {
+        let mut prof = EllaProfile::default();
+        let occ = |prof: &EllaProfile| prof.channels[&(6, 7)].occ_by_inst[&2];
+        assert!(ingest(
+            &mut prof,
+            7,
+            EVT_ELLA_RELAY_SUBSCRIBER_JOIN,
+            &join_payload(1, 0, b"")
+        ));
+        assert_eq!(occ(&prof), 1);
+        assert!(ingest(
+            &mut prof,
+            7,
+            EVT_ELLA_RELAY_SUBSCRIBER_JOIN,
+            &join_payload(1, 1, b"")
+        ));
+        assert_eq!(occ(&prof), 1);
+        assert!(ingest(
+            &mut prof,
+            7,
+            EVT_ELLA_RELAY_SUBSCRIBER_JOIN,
+            &join_payload(2, 1, b"")
+        ));
+        assert_eq!(occ(&prof), 2);
+        assert!(ingest(
+            &mut prof,
+            7,
+            EVT_ELLA_RELAY_SUBSCRIBER_LEAVE,
+            &leave_payload(1)
+        ));
+        assert_eq!(occ(&prof), 1);
+        assert!(ingest(
+            &mut prof,
+            7,
+            EVT_ELLA_RELAY_SUBSCRIBER_LEAVE,
+            &leave_payload(9)
+        ));
+        assert_eq!(occ(&prof), 0);
+        assert_eq!(prof.channels[&(6, 7)].peak_subscribers, 2);
+        assert!(prof.live_subs.contains(&(6, 7, 2, 2)));
+    }
+
+    #[test]
+    fn node_identity_relay_id() {
+        let mut prof = EllaProfile::default();
+        assert!(ingest(
+            &mut prof,
+            ELLA_RELAY_GLOBAL_SESSION,
+            EVT_ELLA_RELAY_NODE_IDENTITY,
+            &4242u32.to_le_bytes()
+        ));
+        assert!(matches!(
+            prof.events[0].payload,
+            EllaPayload::NodeIdentity { relay_id: 4242 }
+        ));
+        assert_eq!(
+            ella_relay_event_name(EVT_ELLA_RELAY_SUBSCRIBER_JOIN),
+            "SUBSCRIBER_JOIN"
+        );
+        assert_eq!(
+            ella_relay_event_name(EVT_ELLA_RELAY_SUBSCRIBER_LEAVE),
+            "SUBSCRIBER_LEAVE"
+        );
     }
 }
