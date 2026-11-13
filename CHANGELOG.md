@@ -14,6 +14,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   sub id); a state-dump replay counts only for a subscription not
   already live. Older captures' `CHANNEL_SUBSCRIBER` still decode.
 
+### Fixed
+
+- Windows: `event_explorer.exe` and `elog_cli.exe` embed the app icon, so
+  Explorer, shortcuts and the taskbar show it.
+
 ## [1.6.3] - 2026-11-12
 
 ### Added
