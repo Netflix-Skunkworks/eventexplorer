@@ -332,12 +332,14 @@ pub fn compute_cpu_usage_bins_for_cpus(
     // collapses toward bin_width / period (~20% here) regardless of
     // how busy the cpu actually was. Flooring bin_us at the sample
     // period keeps zoomed-in views pinned at the sampler's real
-    // resolution instead of fabricating sub-sample-period noise. Only
-    // applies when we know the real rate; the empirical-max fallback
-    // path (no rate) has no period to floor against. With several rates
-    // the slowest one sets the floor.
+    // resolution instead of fabricating sub-sample-period noise. The
+    // floor is two periods: sampler jitter against one-period bin edges
+    // puts 0 or 2 samples from a busy cpu in neighbouring bins, which
+    // draws as comb-like spikes. Only applies when we know the real
+    // rate; the empirical-max fallback path (no rate) has no period to
+    // floor against. With several rates the slowest one sets the floor.
     if let Some(hz) = rates.iter().map(|r| r.hz).filter(|&hz| hz > 0).min() {
-        let period_us = nice_bin_us((1_000_000.0 / hz as f64).max(1.0));
+        let period_us = nice_bin_us((2_000_000.0 / hz as f64).max(1.0));
         bin_us = bin_us.max(period_us);
     }
     let bin_count = duration.div_ceil(bin_us) as usize;
