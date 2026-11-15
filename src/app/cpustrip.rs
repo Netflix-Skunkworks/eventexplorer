@@ -1902,6 +1902,8 @@ impl TopProcessesStripView {
                 let user_color = per_pid_color(bins.processes[1].pid);
                 draw_filled_band(plot_ui, &kernel_pts, None, kernel_color);
                 draw_filled_band(plot_ui, &total_pts, Some(&kernel_pts), user_color);
+                let kernel_pts = step_points(&kernel_pts);
+                let total_pts = step_points(&total_pts);
                 plot_ui.line(
                     Line::new(PlotPoints::new(kernel_pts))
                         .color(kernel_color)
@@ -2082,15 +2084,30 @@ pub fn per_pid_color(pid: u32) -> Color32 {
     Color32::from_rgb(r.max(120), g.max(120), b.max(120))
 }
 
+/// Half the spacing of `pts`' bin-centre x values.
+fn half_bin(pts: &[[f64; 2]]) -> f64 {
+    if pts.len() < 2 {
+        return 0.0;
+    }
+    (pts[1][0] - pts[0][0]) * 0.5
+}
+
+/// Each bin-centre point as a flat step across its bin, so the outline
+/// meets the band drawn by [`draw_filled_band`] with right-angle joins.
+fn step_points(pts: &[[f64; 2]]) -> Vec<[f64; 2]> {
+    let h = half_bin(pts);
+    pts.iter()
+        .flat_map(|&[x, y]| [[x - h, y], [x + h, y]])
+        .collect()
+}
+
 /// Fill the band under `top` (or between `top` and `bottom`, if given)
-/// with one small convex quad per bin-to-bin segment, rather than one
-/// polygon spanning the whole curve. `top`/`bottom` are same-length,
-/// same-x point lists; each quad's two "vertical" edges both run from
-/// `bottom` up to `top`, so every quad is convex regardless of how
-/// jagged the curves are (unlike a naive whole-curve polygon, which
-/// egui_plot's fan triangulation can render incorrectly for a
-/// non-star-shaped area). `Line::fill()` would also work but caps out
-/// around 5-10% opacity, too faint for a two-tone stacked area.
+/// with one axis-aligned rectangle per bin. `top`/`bottom` are
+/// same-length lists of bin-centre points. Sloped per-bin quads go
+/// wrong once bins are about a pixel wide: egui's anti-aliasing feather
+/// on a steep sub-pixel quad leaves slivers floating above the curve.
+/// `Line::fill()` would also work but caps out around 5-10% opacity,
+/// too faint for a two-tone stacked area.
 fn draw_filled_band(
     plot_ui: &mut egui_plot::PlotUi,
     top: &[[f64; 2]],
@@ -2100,15 +2117,19 @@ fn draw_filled_band(
     if top.len() < 2 {
         return;
     }
+    let h = half_bin(top);
     let fill = Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), 190);
-    for i in 0..top.len() - 1 {
-        let (x0, top0) = (top[i][0], top[i][1]);
-        let (x1, top1) = (top[i + 1][0], top[i + 1][1]);
-        let (bot0, bot1) = match bottom {
-            Some(b) => (b[i][1], b[i + 1][1]),
-            None => (0.0, 0.0),
-        };
-        let pts = PlotPoints::new(vec![[x0, bot0], [x0, top0], [x1, top1], [x1, bot1]]);
+    for (i, &[x, y_top]) in top.iter().enumerate() {
+        let y_bot = bottom.map_or(0.0, |b| b[i][1]);
+        if y_top <= y_bot {
+            continue;
+        }
+        let pts = PlotPoints::new(vec![
+            [x - h, y_bot],
+            [x - h, y_top],
+            [x + h, y_top],
+            [x + h, y_bot],
+        ]);
         plot_ui.polygon(
             egui_plot::Polygon::new(pts)
                 .fill_color(fill)
