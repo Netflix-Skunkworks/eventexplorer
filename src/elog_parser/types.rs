@@ -2385,8 +2385,19 @@ impl CpuProfile {
     /// Latest known process name for `pid` (proctitle, else open
     /// `PROC_EXEC`, else executable basename from maps, else
     /// `THREAD_CREATE`). A mapped `perl` path yields the thread comm
-    /// when that comm is a process name.
+    /// when that comm is a process name. An exited pid keeps the name
+    /// it had just before `PROC_EXIT`.
     pub fn process_comm_latest(&self, pid: u32) -> Option<&str> {
+        let exit_ts = self
+            .proc_execs
+            .get(&pid)
+            .and_then(|execs| execs.last())
+            .and_then(|e| e.end_ts);
+        if let Some(end) = exit_ts {
+            if let Some(c) = self.process_comm_at(pid, None, end.saturating_sub(1)) {
+                return Some(c);
+            }
+        }
         if let Some(title) = self.title_latest(pid) {
             return Some(title);
         }
@@ -3558,7 +3569,7 @@ mod inherit_fork_proc_maps_tests {
         assert_eq!(p.process_comm_at(100, Some(1), 120), Some("get_cfg_value"));
         assert_eq!(p.process_comm_at(100, Some(1), 150), Some("sh"));
         assert_eq!(p.process_comm_at(100, Some(1), 200), Some("sh"));
-        assert_eq!(p.process_comm_latest(100), Some("sh"));
+        assert_eq!(p.process_comm_latest(100), Some("get_cfg_value"));
         p.apply_proc_exec(200, 100, "nginx".to_string());
         p.proc_execs
             .get_mut(&100)
@@ -3568,6 +3579,37 @@ mod inherit_fork_proc_maps_tests {
         assert_eq!(p.process_comm_at(100, Some(1), 180), Some("sh"));
         assert_eq!(p.process_comm_at(100, Some(1), 210), Some("nginx"));
         assert_eq!(p.process_comm_latest(100), Some("nginx"));
+    }
+
+    #[test]
+    fn process_comm_latest_names_an_exited_pid_by_its_image() {
+        let mut p = CpuProfile::default();
+        p.threads.extend([thread(1, 100, "mrelay")]);
+        for (id, path) in [(1, "/bin/sh"), (2, "/usr/local/bin/mrelay")] {
+            p.user_files.insert(
+                id,
+                UserFile {
+                    user_file_id: id,
+                    build_id: String::new(),
+                    pathname: path.to_string(),
+                },
+            );
+        }
+        p.proc_maps.insert(
+            100,
+            [(1, 0x1000), (2, 0x4000_0000)]
+                .map(|(user_file_id, base)| ProcMap {
+                    pid: 100,
+                    user_file_id,
+                    base,
+                    size: 0x1000,
+                    offset: 0,
+                })
+                .to_vec(),
+        );
+        p.apply_proc_exec(10, 100, "mrelay".to_string());
+        p.apply_proc_exit(500, 100);
+        assert_eq!(p.process_comm_latest(100), Some("mrelay"));
     }
 
     #[test]
