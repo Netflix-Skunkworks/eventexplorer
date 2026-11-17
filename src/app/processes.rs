@@ -105,6 +105,11 @@ pub struct ProcessesViewState {
     /// When grouped, split kernel threads into idle/intr/clock/…
     /// rows instead of one `kernel` row. Ignored when `split_by_pid`.
     pub(crate) split_by_thread_name: bool,
+    /// Show % CPU against every CPU's sampling capacity instead of
+    /// against the busy samples in the window.
+    pub(crate) pct_of_all_cpus: bool,
+    /// [`analysis::cpu_sample_capacity`] for the current window.
+    pub(crate) capacity_samples: f64,
     pub(crate) sort_column: ProcessSortColumn,
     /// `true` when the sort is ascending. Default ordering on
     /// each column descends *for the magnitude columns* (samples,
@@ -128,6 +133,7 @@ pub(crate) struct ProcessRollup {
     rows: Vec<analysis::ProcessSummary>,
     grouped_by_process: Vec<analysis::ProcessGroupSummary>,
     grouped_by_thread: Vec<analysis::ProcessGroupSummary>,
+    capacity_samples: f64,
 }
 
 fn build_process_rollup(
@@ -146,6 +152,7 @@ fn build_process_rollup(
         rows,
         grouped_by_process,
         grouped_by_thread,
+        capacity_samples: analysis::cpu_sample_capacity(profile, ts_start_us, ts_end_us),
     }
 }
 
@@ -163,6 +170,8 @@ impl ProcessesViewState {
             grouped_by_thread,
             split_by_pid: false,
             split_by_thread_name: false,
+            pct_of_all_cpus: false,
+            capacity_samples: analysis::cpu_sample_capacity(profile, 0, u64::MAX),
             sort_column: ProcessSortColumn::Samples,
             sort_ascending: false,
             selected: None,
@@ -178,6 +187,8 @@ impl ProcessesViewState {
             grouped_by_thread: Vec::new(),
             split_by_pid: false,
             split_by_thread_name: false,
+            pct_of_all_cpus: false,
+            capacity_samples: 0.0,
             sort_column: ProcessSortColumn::Samples,
             sort_ascending: false,
             selected: None,
@@ -190,7 +201,17 @@ impl ProcessesViewState {
         self.rows = rollup.rows;
         self.grouped_by_process = rollup.grouped_by_process;
         self.grouped_by_thread = rollup.grouped_by_thread;
+        self.capacity_samples = rollup.capacity_samples;
         self.sort_rows();
+    }
+
+    /// % CPU shown for `busy` samples whose share of busy is `pct_busy`.
+    fn shown_pct(&self, busy: u64, pct_busy: f64) -> f64 {
+        if self.pct_of_all_cpus && self.capacity_samples > 0.0 {
+            100.0 * busy as f64 / self.capacity_samples
+        } else {
+            pct_busy
+        }
     }
 
     pub(crate) fn groups(&self) -> &[analysis::ProcessGroupSummary] {
@@ -366,6 +387,7 @@ fn show_processes_gear_menu(
     ui: &mut egui::Ui,
     split_by_pid: &mut bool,
     split_by_thread_name: &mut bool,
+    pct_of_all_cpus: &mut bool,
 ) {
     let popup_id = ui.make_persistent_id("processes_gear_menu");
     let is_open = ui
@@ -433,6 +455,15 @@ fn show_processes_gear_menu(
                  pid column; the detail panel expands the member \
                  pids.",
                 );
+            ui.checkbox(
+                pct_of_all_cpus,
+                RichText::new("% CPU of all CPUs").size(12.0),
+            )
+            .on_hover_text(
+                "% CPU against every CPU's full sampling capacity over \
+                 the window, so 100% is the whole box busy. Off \
+                 (default) is the share of the window's busy samples.",
+            );
         });
     });
     let popup_rect = area_resp.response.rect;
@@ -819,6 +850,11 @@ impl EventExplorerApp {
             .as_ref()
             .map(|v| v.split_by_thread_name)
             .unwrap_or(false);
+        let mut pct_of_all_cpus = self
+            .processes_view
+            .as_ref()
+            .map(|v| v.pct_of_all_cpus)
+            .unwrap_or(false);
         let total_busy: u64 = self
             .processes_view
             .as_ref()
@@ -879,11 +915,17 @@ impl EventExplorerApp {
                 ui.ctx().request_repaint();
             }
             ui.add_space(6.0);
-            show_processes_gear_menu(ui, &mut split_by_pid, &mut split_by_thread_name);
+            show_processes_gear_menu(
+                ui,
+                &mut split_by_pid,
+                &mut split_by_thread_name,
+                &mut pct_of_all_cpus,
+            );
         });
         if let Some(view) = self.processes_view.as_mut() {
             view.set_split_by_pid(split_by_pid);
             view.set_split_by_thread_name(split_by_thread_name);
+            view.pct_of_all_cpus = pct_of_all_cpus;
         }
         ui.separator();
 
@@ -1073,7 +1115,7 @@ impl EventExplorerApp {
                                 pid: Some(r.pid),
                                 comm: &r.comm,
                                 busy: r.busy_sample_count,
-                                pct_cpu: r.pct_cpu,
+                                pct_cpu: view.shown_pct(r.busy_sample_count, r.pct_cpu),
                                 threads: r.thread_count,
                                 modules: r.module_count,
                                 is_sel,
@@ -1098,7 +1140,7 @@ impl EventExplorerApp {
                                 pid: None,
                                 comm: &g.comm,
                                 busy: g.busy_sample_count,
-                                pct_cpu: g.pct_cpu,
+                                pct_cpu: view.shown_pct(g.busy_sample_count, g.pct_cpu),
                                 threads: g.thread_count,
                                 modules: g.module_count,
                                 is_sel,

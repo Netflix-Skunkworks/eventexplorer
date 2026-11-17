@@ -856,6 +856,30 @@ pub fn compute_process_summaries(
     compute_process_summaries_between(profile, summaries, 0, u64::MAX)
 }
 
+/// Samples every CPU would take over `[ts_start_us, ts_end_us]` if it
+/// were always busy, clamped to the sampled span. The sampler skips
+/// most idle ticks, so this is the "% of all CPUs" denominator.
+pub fn cpu_sample_capacity(profile: &CpuProfile, ts_start_us: u64, ts_end_us: u64) -> f64 {
+    let (Some(first), Some(last)) = (profile.samples.first(), profile.samples.last()) else {
+        return 0.0;
+    };
+    let lo = ts_start_us.max(first.ts);
+    let hi = ts_end_us.min(last.ts);
+    if hi <= lo {
+        return 0.0;
+    }
+    let ncpu = match profile.kernel.as_ref().map(|k| k.ncpus) {
+        Some(n) if n > 0 => n as usize,
+        _ => profile
+            .samples
+            .iter()
+            .map(|s| s.cpu)
+            .collect::<FxHashSet<_>>()
+            .len(),
+    };
+    expected_samples(&profile.rate_timeline(), lo, hi) * ncpu as f64
+}
+
 /// [`compute_process_summaries`] restricted to samples whose `ts`
 /// falls in `[ts_start_us, ts_end_us]` (inclusive). `ts_end_us` of
 /// `u64::MAX` runs through the end of the capture. The full-range
@@ -1192,6 +1216,22 @@ mod tests {
         assert_eq!(window[0].first_ts_us, 200);
         assert_eq!(window[0].last_ts_us, 200);
         assert!(compute_process_summaries_between(&profile, &[], 201, 499).is_empty());
+    }
+
+    #[test]
+    fn cpu_sample_capacity_counts_every_cpu_over_the_sampled_span() {
+        let profile = CpuProfile {
+            samples: vec![busy_sample(1_000_000, 0, 0), busy_sample(3_000_000, 1, 0)],
+            sample_rates: vec![SampleRateSegment {
+                start_us: 0,
+                hz: 100,
+                detected: true,
+            }],
+            ..CpuProfile::default()
+        };
+        assert_eq!(cpu_sample_capacity(&profile, 0, u64::MAX), 400.0);
+        assert_eq!(cpu_sample_capacity(&profile, 2_000_000, u64::MAX), 200.0);
+        assert_eq!(cpu_sample_capacity(&profile, 4_000_000, u64::MAX), 0.0);
     }
 
     #[test]
