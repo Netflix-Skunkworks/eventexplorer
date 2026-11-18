@@ -881,6 +881,13 @@ impl<'a> PayloadReader<'a> {
             .is_some_and(|s| s.find_field(self.event_id, name).is_some())
     }
 
+    /// Byte width the schema gives field `name`.
+    pub fn field_size(&self, name: &str) -> Option<u16> {
+        self.schema?
+            .find_field(self.event_id, name)
+            .map(field_byte_size)
+    }
+
     /// Name this event's schema gives `value` for an enum field, so a
     /// decoder can match on the name instead of pinning the number.
     pub fn enum_name(&self, name: &str, value: u32) -> Option<&str> {

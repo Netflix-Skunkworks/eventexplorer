@@ -584,9 +584,9 @@ pub struct EllaFrameSample {
 /// One `CHANNEL_COUNT_TOTAL` / `CHANNEL_STATS` sample (id 151),
 /// process-wide occupancy on the global session (`STATS` keyword).
 /// Gauge fields are levels; traffic/join counters are deltas since the
-/// previous sample. Current captures carry the counters in the
-/// `TRAFFIC_STATS` / `DELIVERED_STATS` events that follow, folded in
-/// here. Older captures stop after the subscriber gauges (or earlier);
+/// previous sample. Current captures carry the counters as totals in
+/// the `TRAFFIC_STATS` / `DELIVERED_STATS` events that follow; their
+/// differences are folded in here. Older captures stop after the subscriber gauges (or earlier);
 /// the counter fields then stay 0.
 #[derive(Debug, Clone, Copy)]
 pub struct EllaChannelCountTotal {
@@ -814,7 +814,7 @@ impl EllaNodeRole {
     }
 }
 
-/// One `OFFLOAD_STATS` sample (id 154): process-wide send-seq and
+/// One `OFFLOAD_STATS` sample (id 156): process-wide send-seq and
 /// rxring deltas for the stats interval, on the global session.
 /// `rxring_result` is the open attempt: 0 not attempted, 1 opened,
 /// 2 no socket, 3 port unbound, 4 catch-all refused, 5 region too big,
@@ -838,6 +838,29 @@ pub struct EllaOffloadSample {
     pub rxring_else_nocls: u32,
 }
 
+/// One `TRAFFIC_STATS` (154, `side` set) or `DELIVERED_STATS` (155,
+/// `side` `None`) sample as logged, on the global session. Current ELLA
+/// logs totals since process start (`cumulative`); earlier builds logged
+/// deltas since the previous sample. `level` is `clients` or
+/// `subscriptions`. The finish pass folds the per-sample differences into
+/// [`EllaChannelCountTotal`].
+#[derive(Debug, Clone, Copy, Default)]
+pub struct EllaTrafficSample {
+    pub ts: u64,
+    pub provider_id: u16,
+    pub side: Option<u8>,
+    pub cumulative: bool,
+    pub packets: u64,
+    pub bytes: u64,
+    pub joins: u64,
+    pub switches: u64,
+    pub leaves: u64,
+    pub expiries: u64,
+    pub rejects: u64,
+    pub new_clients: u64,
+    pub level: u32,
+}
+
 /// All `fanout_node` / `ella_relay` data from a capture. `is_empty()`
 /// gates the ELLA System-tab panels and the channel list.
 #[derive(Debug, Clone, Default)]
@@ -849,6 +872,7 @@ pub struct EllaProfile {
     pub channel_samples: Vec<EllaChannelSample>,
     pub frame_samples: Vec<EllaFrameSample>,
     pub offload_samples: Vec<EllaOffloadSample>,
+    pub traffic_samples: Vec<EllaTrafficSample>,
     /// `(provider_id, instance_id) → side` from `INSTANCE_ATTACH`.
     pub instances: FxHashMap<(u16, u32), u8>,
     /// `provider_id → role` from `NODE_INFO`, the producer's own
@@ -868,6 +892,7 @@ impl EllaProfile {
             && self.channel_samples.is_empty()
             && self.frame_samples.is_empty()
             && self.offload_samples.is_empty()
+            && self.traffic_samples.is_empty()
     }
 
     pub fn has_channel_counts(&self) -> bool {

@@ -16,6 +16,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   sub id); a state-dump replay counts only for a subscription not
   already live. Older captures' `CHANNEL_SUBSCRIBER` still decode.
   `subscriber_reason` 9 is `SOURCE_ENDED`.
+- ELLA `fanout_node` `TRAFFIC_STATS` (154) and `DELIVERED_STATS` (155)
+  from current ELLA, whose u64 counters are totals since process start. The
+  CDN metrics plots use the difference between successive samples per
+  node and side; a decrease counts as a restart. `OFFLOAD_STATS` moves
+  to 156. Earlier u32-delta builds still decode.
 
 ### Fixed
 

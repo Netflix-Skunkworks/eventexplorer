@@ -1699,6 +1699,23 @@ pub static ELLA_RELAY_EXPECTED: &[ExpectedEvent] = &[
             ExpectedField::new("rxring_dropped_unreg", 28, 4),
         ],
     },
+    // Current ELLA: u64 totals since process start.
+    ExpectedEvent {
+        event_id: EVT_ELLA_RELAY_TRAFFIC_STATS,
+        fields: &[
+            ExpectedField::new("side", 0, 1),
+            ExpectedField::new("packets", 1, 8),
+            ExpectedField::new("bytes", 9, 8),
+            ExpectedField::new("joins", 17, 8),
+            ExpectedField::new("switches", 25, 8),
+            ExpectedField::new("leaves", 33, 8),
+            ExpectedField::new("expiries", 41, 8),
+            ExpectedField::new("rejects", 49, 8),
+            ExpectedField::new("new_clients", 57, 8),
+            ExpectedField::new("clients", 65, 4),
+        ],
+    },
+    // Earlier builds: u32 deltas since the previous sample.
     ExpectedEvent {
         event_id: EVT_ELLA_RELAY_TRAFFIC_STATS,
         fields: &[
@@ -1712,6 +1729,16 @@ pub static ELLA_RELAY_EXPECTED: &[ExpectedEvent] = &[
             ExpectedField::new("rejects", 29, 4),
             ExpectedField::new("new_clients", 33, 4),
             ExpectedField::new("clients", 37, 4),
+        ],
+    },
+    ExpectedEvent {
+        event_id: EVT_ELLA_RELAY_DELIVERED_STATS,
+        fields: &[
+            ExpectedField::new("packets", 0, 8),
+            ExpectedField::new("bytes", 8, 8),
+            ExpectedField::new("joins", 16, 8),
+            ExpectedField::new("switches", 24, 8),
+            ExpectedField::new("subscriptions", 32, 4),
         ],
     },
     ExpectedEvent {
