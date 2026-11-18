@@ -8,11 +8,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- ELLA `fanout_node` `SUBSCRIBER_JOIN` (103) / `SUBSCRIBER_LEAVE` (104)
-  and `NODE_IDENTITY` (4) decode, with `ellaevents` detail. Channel and
-  title subscriber occupancy count JOIN/LEAVE per (session, instance,
+- ELLA `fanout_node` `SUBSCRIBER_LEAVE` (101), `SUBSCRIBER_CLIENT` (102),
+  `SUBSCRIBER_JOINED` (103) and `NODE_IDENTITY` (3) decode, with
+  `ellaevents` detail. A join takes its address and PBCID from the
+  `SUBSCRIBER_CLIENT` with the same instance and client id. Channel and
+  title subscriber occupancy count JOINED/LEAVE per (session, instance,
   sub id); a state-dump replay counts only for a subscription not
   already live. Older captures' `CHANNEL_SUBSCRIBER` still decode.
+  `subscriber_reason` 9 is `SOURCE_ENDED`.
 
 ### Fixed
 

@@ -1096,7 +1096,7 @@ TCP session map.
 | 0 | `INSTANCE_ATTACH` | global | `instance_id`, `side` (0 UPSTREAM, 1 DOWNSTREAM). Payload 5 bytes. |
 | 1 | `NODE_ERROR` | global | `code`, `instance_id`, `channel_id`, `detail`, `subscriber_port`, `channel_id_known`, `message_type`, `subscriber_address_len`, trailing binary `subscriber_address` (4-byte IPv4 or 16-byte IPv6). Packed head 18 bytes. Older `ella_relay` captures name this `RELAY_ERROR` and use the original 20-byte payload (some intermediate captures append fixed-string peer fields). |
 | 2 | `NODE_INFO` | global | `role` (0 ORIGIN, 1 RELAY). Payload 1 byte. The node's own declaration of what it is; the GUI/CLI call ORIGIN the Server. |
-| 4 | `NODE_IDENTITY` | global | `relay_id` (OCA cdnId, 0 if unset). Payload 4 bytes. At startup and in every state dump. |
+| 3 | `NODE_IDENTITY` | global | `relay_id` (OCA cdnId, 0 if unset). Payload 4 bytes. At startup and in every state dump. |
 | 50 | `SESSION_CREATE` | channel | `channel_name[64]`, `version`, `instance_id`. Packed payload 69 bytes; legacy payload 72 bytes. Opens at first JOIN, not when the id arrives. |
 | 51 | `SESSION_DESTROY` | channel | Empty payload. |
 | 52 | `CHANNEL_STATE` | channel | `state`, `reason`, `instance_id`, `subscribers` (live + join_next + switch_pending). Packed payload 10 bytes; legacy payload 12 bytes. |
@@ -1104,9 +1104,9 @@ TCP session map.
 | 54 | `CHANNEL_ERROR` | channel | `code`, `instance_id`, `detail`. Packed payload 9 bytes; legacy payload 12 bytes. |
 | 55 | `CHANNEL_DESTROYED` | channel | `reason`, `instance_id`, `subscribers` (live + join_next + switch_pending). Packed payload 9 bytes; legacy payload 12 bytes. |
 | 100 | `CHANNEL_SUBSCRIBER` | channel | `state`, `reason`, `instance_id`, `subscribers`, `subscriber_port`, `subscriber_address_len`, trailing binary `subscriber_address` (4-byte IPv4 or 16-byte IPv6). Packed head 13 bytes. Legacy payload uses `subscriber_address[48]` and is 64 bytes. See `subscriber_state` below for the state numbering. |
-| 101 | `SUBSCRIBER_IDENTITY` | channel | `instance_id`, `request_id`, `subscriber_port`, `subscriber_address` (`in6_addr`; IPv4 is v4-mapped and shown dotted), `pbcid_len`, trailing ASCII `pbcid`. Packed head 27 bytes. Emitted just before the SUBSCRIBING `CHANNEL_SUBSCRIBER`, only for subscribers with a PBCID. |
-| 103 | `SUBSCRIBER_JOIN` | channel | `instance_id`, `sub_id`, `request_id`, `subscriber_port`, `subscriber_address` (`in6_addr`, v4-mapped shown dotted), `pending_ms`, `replay`, `pbcid_len`, trailing ASCII `pbcid`. Packed head 34 bytes. Replaces 100/101. Keyed by (session, `instance_id`, `sub_id`); `replay` 1 re-emits a live subscription in a state dump, so it counts only when the key is not already live. |
-| 104 | `SUBSCRIBER_LEAVE` | channel | `instance_id`, `sub_id`, `reason` (`subscriber_reason`), `duration_ms`, `packets`, `bytes` (u64), `objects`. Packed 29 bytes. Ends the matching `SUBSCRIBER_JOIN`. |
+| 101 | `SUBSCRIBER_LEAVE` | channel | `instance_id`, `sub_id`, `reason` (`subscriber_reason`), `duration_ms`, `packets`, `bytes` (u64), `objects`. Packed 29 bytes. Ends the matching `SUBSCRIBER_JOINED`. |
+| 102 | `SUBSCRIBER_CLIENT` | global | `instance_id`, `client_id`, `subscriber_port`, `subscriber_address` (`in6_addr`; IPv4 is v4-mapped and shown dotted), `pbcid_len`, trailing ASCII `pbcid` (empty for relays). Packed head 27 bytes. Names a downstream client once per log, before its first `SUBSCRIBER_JOINED` and again after a state dump. |
+| 103 | `SUBSCRIBER_JOINED` | channel | `instance_id`, `sub_id`, `client_id`, `request_id`, `pending_ms`, `replay`. Packed 19 bytes. Keyed by (session, `instance_id`, `sub_id`); `replay` 1 re-emits a live subscription in a state dump, so it counts only when the key is not already live. Address, port and PBCID come from the `SUBSCRIBER_CLIENT` with the same `instance_id` and `client_id`. |
 | 150 | `CHANNEL_COUNT` | global | `STATS_DETAILED` (removed in newer ELLA). Per Fanout instance: `instance_id`, `channels`, `channels_pending_leave`, `channels_pending_retire`, `subscribers` (live `clients` only). Payload 20 bytes. Older `ella_relay` captures append `sessions` (24 bytes). |
 | 151 | `CHANNEL_COUNT_TOTAL` | global | `STATS`. Process-wide: `channels_up`, `channels_dn`, `channels_pending_leave_up`/`_dn`, `channels_pending_retire_up`/`_dn`, `subscribers_up`, `subscribers_dn`, then `objects_up`/`_dn` and the CDN counter deltas (packets, bytes, joins, switches, delivered, `new_clients`). Packed (no padding). With 64-bit `bytes_up`/`bytes_dn`/`bytes_dlvr` the payload is 104 bytes, or 116 with `clients_up`, `clients_dn` (unique clients) and `subscribers_dlvr` (relay subtree subscriptions) appended; 92 bytes with 32-bit bytes; 32 bytes before the CDN counters. Older captures are 24 bytes (leave/retire summed onto the downstream fields) or 8 bytes (channels only). Current ELLA is back to 40 bytes (gauges and objects) and moves the counters to `TRAFFIC_STATS` / `DELIVERED_STATS`. |
 | 152 | `CHANNEL_SAMPLE` | channel | `STATS_CHANNEL` (newer ELLA). Per channel × instance: `instance_id`, `subscribers` (live), `subscribers_pending`, `subscribers_leaving`, `objects_completed`, `object_bytes` (object payload noted since last tick). Payload 24 bytes. |
@@ -1130,6 +1130,10 @@ numbering; a capture with no table for the field predates the insert and
 reads 2 as terminal. Occupancy drops on the terminal state only —
 UNSUBSCRIBING is emitted for the node's own upstream subscription, always
 ahead of an UNSUBSCRIBED.
+
+`subscriber_reason`: NONE 0, SUBSCRIBER_LEAVING 1, KEEPALIVE_TIMEOUT 2,
+JOIN_REJECTED 3, INCOMING_SUBSCRIBER 4, NO_CLIENT_SUBSCRIPTION 5,
+JOIN_TIMEOUT 6, SERVER_ACK 7, SHUTDOWN 8, SOURCE_ENDED 9.
 
 Packed-layout ELLA replaces the coarse `JOIN_REJECTED` node error with one code per
 failure site: general packet errors 30–32, CAT errors 33–48, and JOIN

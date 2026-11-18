@@ -3958,7 +3958,7 @@ fn payload_instance_id(p: &EllaPayload) -> Option<u32> {
         | EllaPayload::ChannelDestroyed { instance_id, .. }
         | EllaPayload::ChannelIdAssigned { instance_id, .. }
         | EllaPayload::ChannelSubscriber { instance_id, .. }
-        | EllaPayload::SubscriberIdentity { instance_id, .. }
+        | EllaPayload::SubscriberClient { instance_id, .. }
         | EllaPayload::SubscriberJoin { instance_id, .. }
         | EllaPayload::SubscriberLeave { instance_id, .. }
         | EllaPayload::ObjectState { instance_id, .. }
@@ -4025,15 +4025,22 @@ fn channel_event_detail(p: &EllaPayload) -> String {
                 )
             }
         }
-        EllaPayload::SubscriberIdentity {
-            request_id,
+        EllaPayload::SubscriberClient {
+            client_id,
             subscriber_address,
             subscriber_port,
             pbcid,
             ..
-        } => format!("{subscriber_address}:{subscriber_port}  request {request_id}  pbcid {pbcid}"),
+        } => {
+            let mut out = format!("CLIENT  {client_id}  {subscriber_address}:{subscriber_port}");
+            if !pbcid.is_empty() {
+                out.push_str(&format!("  pbcid {pbcid}"));
+            }
+            out
+        }
         EllaPayload::SubscriberJoin {
             sub_id,
+            client_id,
             request_id,
             subscriber_address,
             subscriber_port,
@@ -4043,7 +4050,7 @@ fn channel_event_detail(p: &EllaPayload) -> String {
             ..
         } => {
             let mut out = format!(
-                "JOIN  sub {sub_id}  {subscriber_address}:{subscriber_port}  request {request_id}  pending {pending_ms} ms"
+                "JOIN  sub {sub_id}  client {client_id}  {subscriber_address}:{subscriber_port}  request {request_id}  pending {pending_ms} ms"
             );
             if !pbcid.is_empty() {
                 out.push_str(&format!("  pbcid {pbcid}"));
@@ -4187,7 +4194,7 @@ fn build_ella_channel_events_from(
         let is_join = matches!(
             e.payload,
             EllaPayload::ChannelSubscriber { .. }
-                | EllaPayload::SubscriberIdentity { .. }
+                | EllaPayload::SubscriberClient { .. }
                 | EllaPayload::SubscriberJoin { .. }
                 | EllaPayload::SubscriberLeave { .. }
         );
@@ -7417,8 +7424,8 @@ mod tests {
             EllaPayload::ChannelError { .. } => EVT_ELLA_RELAY_CHANNEL_ERROR,
             EllaPayload::ChannelDestroyed { .. } => EVT_ELLA_RELAY_CHANNEL_DESTROYED,
             EllaPayload::ChannelSubscriber { .. } => EVT_ELLA_RELAY_CHANNEL_SUBSCRIBER,
-            EllaPayload::SubscriberIdentity { .. } => EVT_ELLA_RELAY_SUBSCRIBER_IDENTITY,
-            EllaPayload::SubscriberJoin { .. } => EVT_ELLA_RELAY_SUBSCRIBER_JOIN,
+            EllaPayload::SubscriberClient { .. } => EVT_ELLA_RELAY_SUBSCRIBER_CLIENT,
+            EllaPayload::SubscriberJoin { .. } => EVT_ELLA_RELAY_SUBSCRIBER_JOINED,
             EllaPayload::SubscriberLeave { .. } => EVT_ELLA_RELAY_SUBSCRIBER_LEAVE,
             EllaPayload::ObjectState { .. } => EVT_ELLA_RELAY_OBJECT_STATE,
             EllaPayload::ObjectTiming { .. } => EVT_ELLA_RELAY_OBJECT_TIMING,
@@ -10315,6 +10322,7 @@ mod tests {
             EllaPayload::SubscriberJoin {
                 instance_id: inst,
                 sub_id,
+                client_id: 1,
                 request_id: 0,
                 subscriber_address: "10.0.0.1".into(),
                 subscriber_port: 9,

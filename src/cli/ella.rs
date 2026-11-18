@@ -62,18 +62,19 @@ fn payload_detail(p: &EllaPayload) -> String {
             ella_subscriber_state_name(*state),
             ella_subscriber_reason_name(*reason)
         ),
-        EllaPayload::SubscriberIdentity {
+        EllaPayload::SubscriberClient {
             instance_id,
-            request_id,
+            client_id,
             subscriber_address,
             subscriber_port,
             pbcid,
         } => format!(
-            "instance={instance_id} request={request_id} {subscriber_address}:{subscriber_port} pbcid={pbcid}"
+            "instance={instance_id} client={client_id} {subscriber_address}:{subscriber_port} pbcid={pbcid}"
         ),
         EllaPayload::SubscriberJoin {
             instance_id,
             sub_id,
+            client_id,
             request_id,
             subscriber_address,
             subscriber_port,
@@ -81,7 +82,7 @@ fn payload_detail(p: &EllaPayload) -> String {
             replay,
             pbcid,
         } => format!(
-            "instance={instance_id} sub={sub_id} request={request_id} {subscriber_address}:{subscriber_port} pending_ms={pending_ms} replay={} pbcid={pbcid}",
+            "instance={instance_id} sub={sub_id} client={client_id} request={request_id} {subscriber_address}:{subscriber_port} pending_ms={pending_ms} replay={} pbcid={pbcid}",
             *replay as u8
         ),
         EllaPayload::SubscriberLeave {

@@ -669,19 +669,22 @@ pub enum EllaPayload {
         subscriber_port: u16,
         subscribers: u32,
     },
-    /// A subscription's PBCID, just before its SUBSCRIBING
-    /// `ChannelSubscriber`.
-    SubscriberIdentity {
+    /// Names a downstream client before its first `SubscriberJoin`, on
+    /// the global session.
+    SubscriberClient {
         instance_id: u32,
-        request_id: u32,
+        client_id: u32,
         subscriber_address: String,
         subscriber_port: u16,
         pbcid: String,
     },
     /// A subscription going live; `replay` marks a state-dump re-emit.
+    /// Address, port and PBCID come from the `SubscriberClient` with the
+    /// same `instance_id` / `client_id`, filled in after the load.
     SubscriberJoin {
         instance_id: u32,
         sub_id: u32,
+        client_id: u32,
         request_id: u32,
         subscriber_address: String,
         subscriber_port: u16,

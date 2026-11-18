@@ -1265,9 +1265,9 @@ pub fn ella_relay_has_hardcoded_decoder(event_id: u32) -> bool {
             | EVT_ELLA_RELAY_CHANNEL_ERROR
             | EVT_ELLA_RELAY_CHANNEL_DESTROYED
             | EVT_ELLA_RELAY_CHANNEL_SUBSCRIBER
-            | EVT_ELLA_RELAY_SUBSCRIBER_IDENTITY
-            | EVT_ELLA_RELAY_SUBSCRIBER_JOIN
             | EVT_ELLA_RELAY_SUBSCRIBER_LEAVE
+            | EVT_ELLA_RELAY_SUBSCRIBER_CLIENT
+            | EVT_ELLA_RELAY_SUBSCRIBER_JOINED
             | EVT_ELLA_RELAY_CHANNEL_COUNT
             | EVT_ELLA_RELAY_CHANNEL_COUNT_TOTAL
             | EVT_ELLA_RELAY_CHANNEL_SAMPLE
@@ -1423,10 +1423,10 @@ pub static ELLA_RELAY_EXPECTED: &[ExpectedEvent] = &[
         ],
     },
     ExpectedEvent {
-        event_id: EVT_ELLA_RELAY_SUBSCRIBER_IDENTITY,
+        event_id: EVT_ELLA_RELAY_SUBSCRIBER_CLIENT,
         fields: &[
             ExpectedField::new("instance_id", 0, 4),
-            ExpectedField::new("request_id", 4, 4),
+            ExpectedField::new("client_id", 4, 4),
             ExpectedField::new("subscriber_port", 8, 2),
             ExpectedField::new("subscriber_address", 10, 16),
             ExpectedField::new("pbcid_len", 26, 1),
@@ -1434,17 +1434,14 @@ pub static ELLA_RELAY_EXPECTED: &[ExpectedEvent] = &[
         ],
     },
     ExpectedEvent {
-        event_id: EVT_ELLA_RELAY_SUBSCRIBER_JOIN,
+        event_id: EVT_ELLA_RELAY_SUBSCRIBER_JOINED,
         fields: &[
             ExpectedField::new("instance_id", 0, 4),
             ExpectedField::new("sub_id", 4, 4),
-            ExpectedField::new("request_id", 8, 4),
-            ExpectedField::new("subscriber_port", 12, 2),
-            ExpectedField::new("subscriber_address", 14, 16),
-            ExpectedField::new("pending_ms", 30, 2),
-            ExpectedField::new("replay", 32, 1),
-            ExpectedField::new("pbcid_len", 33, 1),
-            ExpectedField::varlen("pbcid", 34),
+            ExpectedField::new("client_id", 8, 4),
+            ExpectedField::new("request_id", 12, 4),
+            ExpectedField::new("pending_ms", 16, 2),
+            ExpectedField::new("replay", 18, 1),
         ],
     },
     ExpectedEvent {

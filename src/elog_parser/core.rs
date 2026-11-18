@@ -2072,7 +2072,7 @@ fn parse_elog_from(
     ella_profile.counts.sort_unstable_by_key(|s| s.ts);
     ella_profile.counts_total.sort_unstable_by_key(|s| s.ts);
     ella_profile.channel_samples.sort_unstable_by_key(|s| s.ts);
-    apply_channel_sample_peaks(&mut ella_profile);
+    finish_ella_profile(&mut ella_profile);
     nginx_profile.events.sort_unstable_by_key(|e| e.ts);
     // Any IF_SAMPLE_BYTES halves whose IF_SAMPLE_PACKETS half never
     // arrived (capture ends mid-tick) -- flush them standalone.
