@@ -645,6 +645,21 @@ pub fn ingest_ella_relay(
                 objects_completed: r.u64("objects_completed", 16),
                 object_bytes: r.u64("object_bytes", 24),
                 packets: r.u64("packets", 32),
+                inproc_attached: if r.typed() || size >= 60 {
+                    r.u32("inproc_attached", 40)
+                } else {
+                    0
+                },
+                publish_no_ring: if r.typed() || size >= 60 {
+                    r.u64("publish_no_ring", 44)
+                } else {
+                    0
+                },
+                drain_skipped_pending: if r.typed() || size >= 60 {
+                    r.u64("drain_skipped_pending", 52)
+                } else {
+                    0
+                },
             });
             true
         }
@@ -677,6 +692,11 @@ pub fn ingest_ella_relay(
                 rxring_else_unreg: r.u32("rxring_else_unreg", 16),
                 rxring_else_malformed: r.u32("rxring_else_malformed", 20),
                 rxring_overwrites: r.u32("rxring_overwrites", 24),
+                rxring_truncated: if r.has("rxring_truncated") {
+                    r.u32("rxring_truncated", 24)
+                } else {
+                    0
+                },
                 rxring_dropped_unreg: r.u32("rxring_dropped_unreg", 28),
                 rxring_result: if tail { r.u32("rxring_result", 32) } else { 0 },
                 rxring_port: if tail { r.u32("rxring_port", 36) } else { 0 },
@@ -838,14 +858,23 @@ fn difference_channel_totals(prof: &mut EllaProfile) {
     prof.channel_totals.sort_by_key(|s| s.ts);
     prof.frame_totals.sort_by_key(|s| s.ts);
 
-    let mut diff: CounterDiff<ChannelKey, 3> = CounterDiff::default();
+    let mut diff: CounterDiff<ChannelKey, 5> = CounterDiff::default();
     let mut m = 0;
     let mut samples = Vec::with_capacity(prof.channel_totals.len());
     for s in &prof.channel_totals {
         apply_marks(&marks, &mut m, s.ts, &mut diff);
         let key = (s.provider_id, s.session_id, s.instance_id);
         let d = diff
-            .next(key, [s.objects_completed, s.object_bytes, s.packets])
+            .next(
+                key,
+                [
+                    s.objects_completed,
+                    s.object_bytes,
+                    s.packets,
+                    s.publish_no_ring,
+                    s.drain_skipped_pending,
+                ],
+            )
             .unwrap_or_default();
         samples.push(EllaChannelSample {
             ts: s.ts,
@@ -858,9 +887,9 @@ fn difference_channel_totals(prof: &mut EllaProfile) {
             objects_completed: sat_u32(d[0]),
             object_bytes: sat_u32(d[1]),
             packets: sat_u32(d[2]),
-            inproc_attached: 0,
-            publish_no_ring: 0,
-            drain_skipped_pending: 0,
+            inproc_attached: s.inproc_attached,
+            publish_no_ring: sat_u32(d[3]),
+            drain_skipped_pending: sat_u32(d[4]),
         });
     }
     for s in &samples {
@@ -2249,6 +2278,96 @@ mod tests {
             (s.frames, s.sum_frame_len, s.sum_actual_us),
             (4, 40_000, 400)
         );
+    }
+
+    /// The longer CHANNEL_TOTALS: `inproc_attached` is a level and the two
+    /// appended u64 totals are differenced with the rest.
+    #[test]
+    fn extended_channel_totals_difference_appended_counters() {
+        let mut prof = EllaProfile::default();
+        for (ts, inproc, no_ring, skipped) in [(1, 3u32, 100u64, 10u64), (2, 2, 160, 11)] {
+            let mut b = channel_totals_payload(2, 5, ts, ts * 1000);
+            b.extend_from_slice(&inproc.to_le_bytes());
+            b.extend_from_slice(&no_ring.to_le_bytes());
+            b.extend_from_slice(&skipped.to_le_bytes());
+            assert_eq!(b.len(), 60);
+            ingest_at(
+                &mut prof,
+                ts * 1_000_000,
+                7,
+                EVT_ELLA_RELAY_CHANNEL_TOTALS,
+                &b,
+            );
+        }
+        finish_ella_profile(&mut prof);
+        let got: Vec<(u32, u32, u32, u32)> = prof
+            .channel_samples
+            .iter()
+            .map(|s| {
+                (
+                    s.object_bytes,
+                    s.inproc_attached,
+                    s.publish_no_ring,
+                    s.drain_skipped_pending,
+                )
+            })
+            .collect();
+        assert_eq!(got, vec![(0, 3, 0, 0), (1000, 2, 60, 1)]);
+    }
+
+    #[test]
+    fn offload_stats_reads_rxring_truncated() {
+        use crate::elog_parser::schema::test_support::{build_blob, FieldSpec};
+        let names = [
+            "send_seq_ok",
+            "send_seq_stale",
+            "rxring_routed",
+            "rxring_else_gate",
+            "rxring_else_unreg",
+            "rxring_else_malformed",
+            "rxring_truncated",
+            "rxring_dropped_unreg",
+            "rxring_result",
+            "rxring_port",
+            "rxring_errno",
+            "rxring_region_bytes",
+            "rxring_else_nocls",
+        ];
+        let fields = names
+            .iter()
+            .enumerate()
+            .map(|(i, n)| FieldSpec::scalar(n, DECODE_TYPE_U32, 4 * i as u16))
+            .collect();
+        let schema = ProviderSchema::parse(&build_blob(
+            "fanout_node",
+            "OFFLOAD_STATS",
+            fields,
+            EVT_ELLA_RELAY_OFFLOAD_STATS,
+            "OFFLOAD_STATS",
+            "",
+        ))
+        .unwrap();
+        let mut b = Vec::new();
+        for v in 1..=13u32 {
+            b.extend_from_slice(&v.to_le_bytes());
+        }
+        let mut prof = EllaProfile::default();
+        assert!(ingest_ella_relay(
+            &mut prof,
+            1,
+            0,
+            0,
+            6,
+            ELLA_RELAY_GLOBAL_SESSION,
+            EVT_ELLA_RELAY_OFFLOAD_STATS,
+            &b,
+            0,
+            b.len(),
+            Some(&schema),
+        ));
+        let s = &prof.offload_samples[0];
+        assert_eq!((s.rxring_truncated, s.rxring_overwrites), (7, 0));
+        assert_eq!((s.rxring_dropped_unreg, s.rxring_else_nocls), (8, 13));
     }
 
     #[test]

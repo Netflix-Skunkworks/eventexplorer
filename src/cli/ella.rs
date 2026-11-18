@@ -440,7 +440,7 @@ pub fn cmd_ella_stats(prof: &EllaProfile, capture_start: u64) {
              7 init failed, 8 evloop failed, 9 opened on a timer"
         );
         println!(
-            "{:>10} {:<8} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>7} {:>6} {:>6} {:>8}",
+            "{:>10} {:<8} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>7} {:>6} {:>6} {:>8}",
             "t(s)",
             "node",
             "seq_ok",
@@ -451,6 +451,7 @@ pub fn cmd_ella_stats(prof: &EllaProfile, capture_start: u64) {
             "malformed",
             "nocls",
             "overwrite",
+            "truncated",
             "drop_unreg",
             "rx_open",
             "port",
@@ -460,7 +461,7 @@ pub fn cmd_ella_stats(prof: &EllaProfile, capture_start: u64) {
         for s in &prof.offload_samples {
             let t = s.ts.saturating_sub(capture_start) as f64 / 1_000_000.0;
             println!(
-                "{:>10.3} {:<8} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>7} {:>6} {:>6} {:>8}",
+                "{:>10.3} {:<8} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>7} {:>6} {:>6} {:>8}",
                 t,
                 prof.node_cli_prefix(s.provider_id),
                 s.send_seq_ok,
@@ -471,6 +472,7 @@ pub fn cmd_ella_stats(prof: &EllaProfile, capture_start: u64) {
                 s.rxring_else_malformed,
                 s.rxring_else_nocls,
                 s.rxring_overwrites,
+                s.rxring_truncated,
                 s.rxring_dropped_unreg,
                 s.rxring_result,
                 s.rxring_port,

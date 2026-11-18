@@ -28,6 +28,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `ellastats`; frame rates are Δbytes over Δduration. A channel's
   CREATED starts its totals from zero and a decrease counts as a
   re-created channel. Captures with the deprecated events still decode.
+- The longer `CHANNEL_TOTALS` layout that appends `inproc_attached`,
+  `publish_no_ring` and `drain_skipped_pending` decodes, the last two
+  differenced like the other totals. `OFFLOAD_STATS` with
+  `rxring_truncated` decodes too, and `ellastats` shows it.
 
 ### Fixed
 

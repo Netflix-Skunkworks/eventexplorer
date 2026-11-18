@@ -1653,6 +1653,25 @@ pub static ELLA_RELAY_EXPECTED: &[ExpectedEvent] = &[
             ExpectedField::new("max_overshoot_us", 28, 4),
         ],
     },
+    // rxring_overwrites renamed rxring_truncated.
+    ExpectedEvent {
+        event_id: EVT_ELLA_RELAY_OFFLOAD_STATS,
+        fields: &[
+            ExpectedField::new("send_seq_ok", 0, 4),
+            ExpectedField::new("send_seq_stale", 4, 4),
+            ExpectedField::new("rxring_routed", 8, 4),
+            ExpectedField::new("rxring_else_gate", 12, 4),
+            ExpectedField::new("rxring_else_unreg", 16, 4),
+            ExpectedField::new("rxring_else_malformed", 20, 4),
+            ExpectedField::new("rxring_truncated", 24, 4),
+            ExpectedField::new("rxring_dropped_unreg", 28, 4),
+            ExpectedField::new("rxring_result", 32, 4),
+            ExpectedField::new("rxring_port", 36, 4),
+            ExpectedField::new("rxring_errno", 40, 4),
+            ExpectedField::new("rxring_region_bytes", 44, 4),
+            ExpectedField::new("rxring_else_nocls", 48, 4),
+        ],
+    },
     ExpectedEvent {
         event_id: EVT_ELLA_RELAY_OFFLOAD_STATS,
         fields: &[
@@ -1751,6 +1770,21 @@ pub static ELLA_RELAY_EXPECTED: &[ExpectedEvent] = &[
             ExpectedField::new("joins", 12, 4),
             ExpectedField::new("switches", 16, 4),
             ExpectedField::new("subscriptions", 20, 4),
+        ],
+    },
+    ExpectedEvent {
+        event_id: EVT_ELLA_RELAY_CHANNEL_TOTALS,
+        fields: &[
+            ExpectedField::new("instance_id", 0, 4),
+            ExpectedField::new("subscribers", 4, 4),
+            ExpectedField::new("subscribers_pending", 8, 4),
+            ExpectedField::new("subscribers_leaving", 12, 4),
+            ExpectedField::new("objects_completed", 16, 8),
+            ExpectedField::new("object_bytes", 24, 8),
+            ExpectedField::new("packets", 32, 8),
+            ExpectedField::new("inproc_attached", 40, 4),
+            ExpectedField::new("publish_no_ring", 44, 8),
+            ExpectedField::new("drain_skipped_pending", 52, 8),
         ],
     },
     ExpectedEvent {
@@ -2183,6 +2217,92 @@ mod tests {
                 "ELLA_RELAY_EXPECTED has event {} but ella_relay_has_hardcoded_decoder doesn't",
                 exp.event_id
             );
+        }
+    }
+
+    fn u32_fields(names: &[&'static str]) -> Vec<FieldSpec> {
+        names
+            .iter()
+            .enumerate()
+            .map(|(i, n)| FieldSpec::scalar(n, DECODE_TYPE_U32, 4 * i as u16))
+            .collect()
+    }
+
+    fn channel_totals_fields(extended: bool) -> Vec<FieldSpec> {
+        let mut f = u32_fields(&[
+            "instance_id",
+            "subscribers",
+            "subscribers_pending",
+            "subscribers_leaving",
+        ]);
+        for (i, n) in ["objects_completed", "object_bytes", "packets"]
+            .iter()
+            .enumerate()
+        {
+            f.push(FieldSpec::scalar(n, DECODE_TYPE_U64, 16 + 8 * i as u16));
+        }
+        if extended {
+            f.push(FieldSpec::scalar("inproc_attached", DECODE_TYPE_U32, 40));
+            f.push(FieldSpec::scalar("publish_no_ring", DECODE_TYPE_U64, 44));
+            f.push(FieldSpec::scalar(
+                "drain_skipped_pending",
+                DECODE_TYPE_U64,
+                52,
+            ));
+        }
+        f
+    }
+
+    /// Both CHANNEL_TOTALS layouts and the OFFLOAD_STATS layout with
+    /// `rxring_truncated` validate cleanly, with nothing left undecoded.
+    #[test]
+    fn ella_totals_and_offload_layouts_validate() {
+        let offload = u32_fields(&[
+            "send_seq_ok",
+            "send_seq_stale",
+            "rxring_routed",
+            "rxring_else_gate",
+            "rxring_else_unreg",
+            "rxring_else_malformed",
+            "rxring_truncated",
+            "rxring_dropped_unreg",
+            "rxring_result",
+            "rxring_port",
+            "rxring_errno",
+            "rxring_region_bytes",
+            "rxring_else_nocls",
+        ]);
+        for (id, name, fields) in [
+            (
+                EVT_ELLA_RELAY_CHANNEL_TOTALS,
+                "CHANNEL_TOTALS",
+                channel_totals_fields(false),
+            ),
+            (
+                EVT_ELLA_RELAY_CHANNEL_TOTALS,
+                "CHANNEL_TOTALS",
+                channel_totals_fields(true),
+            ),
+            (EVT_ELLA_RELAY_OFFLOAD_STATS, "OFFLOAD_STATS", offload),
+        ] {
+            let blob = build_blob_multi(
+                "fanout_node",
+                &[StructSpec { name, fields }],
+                &[EventSpec {
+                    id,
+                    name,
+                    struct_index: 1,
+                    format: "",
+                }],
+            );
+            let schema = ProviderSchema::parse(&blob).unwrap();
+            let result = validate_hardcoded_decoders(&schema, ELLA_RELAY_EXPECTED);
+            assert!(
+                result.divergent.is_empty(),
+                "{name}: {:?}",
+                result.divergent_reasons
+            );
+            assert!(result.new_fields.is_empty(), "{:?}", result.new_fields);
         }
     }
 }

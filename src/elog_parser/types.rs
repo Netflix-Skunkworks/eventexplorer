@@ -821,6 +821,8 @@ impl EllaNodeRole {
 /// `rxring_result` is the open attempt: 0 not attempted, 1 opened,
 /// 2 no socket, 3 port unbound, 4 catch-all refused, 5 region too big,
 /// 6 socket failed, 7 init failed, 8 evloop failed, 9 opened on a timer.
+/// Newer builds log `rxring_truncated` (datagrams cut to fit the slot) in
+/// place of `rxring_overwrites`.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct EllaOffloadSample {
     pub ts: u64,
@@ -832,6 +834,7 @@ pub struct EllaOffloadSample {
     pub rxring_else_unreg: u32,
     pub rxring_else_malformed: u32,
     pub rxring_overwrites: u32,
+    pub rxring_truncated: u32,
     pub rxring_dropped_unreg: u32,
     pub rxring_result: u32,
     pub rxring_port: u32,
@@ -842,6 +845,8 @@ pub struct EllaOffloadSample {
 
 /// One `CHANNEL_TOTALS` (id 157) as logged: `CHANNEL_SAMPLE` with the
 /// counters as totals since the channel was created on that instance.
+/// Some builds append `inproc_attached` (a level) and the
+/// `publish_no_ring` / `drain_skipped_pending` totals; others leave them 0.
 #[derive(Debug, Clone, Copy)]
 pub struct EllaChannelTotals {
     pub ts: u64,
@@ -854,6 +859,9 @@ pub struct EllaChannelTotals {
     pub objects_completed: u64,
     pub object_bytes: u64,
     pub packets: u64,
+    pub inproc_attached: u32,
+    pub publish_no_ring: u64,
+    pub drain_skipped_pending: u64,
 }
 
 /// One `FRAME_TOTALS` (id 158) as logged: `FRAME_SAMPLE` with the
