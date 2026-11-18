@@ -15,13 +15,15 @@
 mod support;
 
 use event_explorer::analysis::{
-    build_ella_channel_list, build_ella_channel_plot, build_ella_relay_plot,
+    build_ella_cdn_metrics_plot_for, build_ella_channel_list, build_ella_channel_plot,
+    build_ella_relay_plot,
 };
 use event_explorer::elog_parser::*;
 use support::{
     synthetic_elog_ella, synthetic_elog_fanout_backlog, synthetic_elog_fanout_node,
-    synthetic_elog_fanout_node_info, synthetic_elog_fanout_stats_only, BACKLOG_GAP_US,
-    CAPTURE_START, ELLA_RELAY_PID, ELLA_RELAY_SESSION,
+    synthetic_elog_fanout_node_info, synthetic_elog_fanout_stats_only,
+    synthetic_elog_fanout_totals, BACKLOG_GAP_US, CAPTURE_START, ELLA_RELAY_PID,
+    ELLA_RELAY_SESSION,
 };
 
 #[test]
@@ -246,4 +248,37 @@ fn a_capture_without_backlog_keeps_its_header_origin() {
 
     assert_eq!(file_info.capture_start, file_info.header_capture_start);
     assert_eq!(file_info.backlog_events, 0);
+}
+
+#[test]
+fn fanout_node_cumulative_totals_plot_as_rates() {
+    let bytes = synthetic_elog_fanout_totals();
+    let progress = LoadProgress::default();
+    let (_sessions, _nic, _pace, _cpu, _if, _tcp, ella, _nginx, file_info, _providers, _schema) =
+        parse_elog_bytes_with_progress(&bytes, &progress).expect("parse totals fixture");
+
+    let bytes_dn: Vec<u64> = ella.counts_total.iter().map(|s| s.bytes_dn).collect();
+    assert_eq!(bytes_dn, vec![0, 125_000_000, 125_000_000]);
+    assert_eq!(ella.counts_total[2].packets_dn, 1000);
+    assert_eq!(ella.counts_total[2].clients_dn, 4);
+    let cdn = build_ella_cdn_metrics_plot_for(&ella, ELLA_RELAY_PID, file_info.capture_start);
+    let dn = cdn
+        .traffic
+        .iter()
+        .find(|s| s.label == "Downstream")
+        .expect("downstream traffic");
+    assert!(
+        dn.data[1..].iter().all(|p| (p[1] - 1000.0).abs() < 1e-6),
+        "downstream Mbps {:?}",
+        dn.data
+    );
+
+    let object_bytes: Vec<u32> = ella
+        .channel_samples
+        .iter()
+        .filter(|s| s.session_id == 5)
+        .map(|s| s.object_bytes)
+        .collect();
+    assert_eq!(object_bytes, vec![0, 1_000_000, 1_000_000]);
+    assert_eq!(ella.channels[&(ELLA_RELAY_PID, 5)].peak_subscribers, 4);
 }

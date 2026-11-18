@@ -2231,6 +2231,51 @@ pub fn synthetic_elog_fanout_stats_only() -> Vec<u8> {
     finish_elog(w, &[(ELLA_RELAY_PID, "fanout_node")])
 }
 
+/// Current-ELLA capture: CHANNEL_STATS with cumulative TRAFFIC_STATS, and a
+/// channel with cumulative CHANNEL_TOTALS, one sample a second for 3 s.
+/// Downstream bytes grow 125 MB a second and the channel's object bytes
+/// 1 MB a second.
+pub fn synthetic_elog_fanout_totals() -> Vec<u8> {
+    let mut w = Writer::new();
+    w.event(
+        ELLA_RELAY_PID,
+        0,
+        CAPTURE_START,
+        0,
+        0,
+        0,
+        &p_ella_instance_attach(0, 1),
+    );
+    let mut create = vec![0u8; 64];
+    create[..6].copy_from_slice(b"live/9");
+    create.push(2);
+    create.extend_from_slice(&0u32.to_le_bytes());
+    w.event(ELLA_RELAY_PID, 0, CAPTURE_START, 5, 50, 0, &create);
+    for k in 1..=3u64 {
+        let ts = CAPTURE_START + k * 1_000_000;
+        let mut stats = Vec::new();
+        for v in [0u32, 1, 0, 0, 0, 0, 0, 4, 0, 1] {
+            stats.extend_from_slice(&v.to_le_bytes());
+        }
+        w.event(ELLA_RELAY_PID, 0, ts, 0, 151, 0, &stats);
+        let mut traffic = vec![1u8];
+        for v in [k * 1000, 1_000_000_000 + k * 125_000_000, k, 0, 0, 0, 0, k] {
+            traffic.extend_from_slice(&v.to_le_bytes());
+        }
+        traffic.extend_from_slice(&4u32.to_le_bytes());
+        w.event(ELLA_RELAY_PID, 0, ts + 1, 0, 154, 0, &traffic);
+        let mut totals = Vec::new();
+        for v in [0u32, 4, 0, 0] {
+            totals.extend_from_slice(&v.to_le_bytes());
+        }
+        for v in [k, k * 1_000_000, k * 1_000] {
+            totals.extend_from_slice(&v.to_le_bytes());
+        }
+        w.event(ELLA_RELAY_PID, 0, ts, 5, 157, 0, &totals);
+    }
+    finish_elog(w, &[(ELLA_RELAY_PID, "fanout_node")])
+}
+
 /// A capture that opens with drained ring backlog: one `NODE_INFO`
 /// identity record from long before `elog(1)` attached (so the header's
 /// `capture_start` names it, while `START_UTC_US` names the live start),
