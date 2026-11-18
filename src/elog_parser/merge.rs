@@ -472,6 +472,8 @@ fn merge_ella(dst: &mut EllaProfile, src: EllaProfile) {
         frame_samples,
         offload_samples,
         traffic_samples,
+        channel_totals,
+        frame_totals,
         instances,
         roles,
         live_subs,
@@ -492,6 +494,8 @@ fn merge_ella(dst: &mut EllaProfile, src: EllaProfile) {
     append_by_ts(&mut dst.frame_samples, frame_samples, |s| s.ts);
     append_by_ts(&mut dst.offload_samples, offload_samples, |s| s.ts);
     append_by_ts(&mut dst.traffic_samples, traffic_samples, |s| s.ts);
+    append_by_ts(&mut dst.channel_totals, channel_totals, |s| s.ts);
+    append_by_ts(&mut dst.frame_totals, frame_totals, |s| s.ts);
     dst.instances.extend(instances);
     dst.roles.extend(roles);
     dst.live_subs.extend(live_subs);

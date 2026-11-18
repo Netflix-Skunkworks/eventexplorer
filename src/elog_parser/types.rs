@@ -541,7 +541,8 @@ pub struct EllaChannelCount {
 /// One `CHANNEL_SAMPLE` (id 152): one channel's occupancy and object
 /// traffic on one instance, on that channel's session. `packets` is
 /// DATA packets noted this interval (same datagrams as `object_bytes`);
-/// older captures leave it 0. Later captures also carry
+/// older captures leave it 0. Current captures log `CHANNEL_TOTALS`
+/// instead, whose differences land here. Later captures also carry
 /// `inproc_attached`, `publish_no_ring`, and `drain_skipped_pending`.
 #[derive(Debug, Clone, Copy)]
 pub struct EllaChannelSample {
@@ -564,7 +565,8 @@ pub struct EllaChannelSample {
 /// sample interval, on that channel's session. Origin sums are planned
 /// vs actual send durations; relay sums are wire/recv/fwd durations.
 /// `sum_packets` is DATA packets across those frames; older captures
-/// leave it 0.
+/// leave it 0. Current captures log `FRAME_TOTALS` instead, whose
+/// differences land here.
 #[derive(Debug, Clone, Copy)]
 pub struct EllaFrameSample {
     pub ts: u64,
@@ -838,6 +840,41 @@ pub struct EllaOffloadSample {
     pub rxring_else_nocls: u32,
 }
 
+/// One `CHANNEL_TOTALS` (id 157) as logged: `CHANNEL_SAMPLE` with the
+/// counters as totals since the channel was created on that instance.
+#[derive(Debug, Clone, Copy)]
+pub struct EllaChannelTotals {
+    pub ts: u64,
+    pub provider_id: u16,
+    pub session_id: u64,
+    pub instance_id: u32,
+    pub subscribers: u32,
+    pub subscribers_pending: u32,
+    pub subscribers_leaving: u32,
+    pub objects_completed: u64,
+    pub object_bytes: u64,
+    pub packets: u64,
+}
+
+/// One `FRAME_TOTALS` (id 158) as logged: `FRAME_SAMPLE` with the
+/// counters and sums as totals since the channel was created on that
+/// instance. `max_overshoot_us` is since the previous `FRAME_TOTALS`.
+#[derive(Debug, Clone, Copy)]
+pub struct EllaFrameTotals {
+    pub ts: u64,
+    pub provider_id: u16,
+    pub session_id: u64,
+    pub instance_id: u32,
+    pub frames: u64,
+    pub frames_stretched: u64,
+    pub sum_frame_len: u64,
+    pub sum_planned_us: u64,
+    pub sum_actual_us: u64,
+    pub sum_fwd_us: u64,
+    pub sum_packets: u64,
+    pub max_overshoot_us: u32,
+}
+
 /// One `TRAFFIC_STATS` (154, `side` set) or `DELIVERED_STATS` (155,
 /// `side` `None`) sample as logged, on the global session. Current ELLA
 /// logs totals since process start (`cumulative`); earlier builds logged
@@ -873,6 +910,8 @@ pub struct EllaProfile {
     pub frame_samples: Vec<EllaFrameSample>,
     pub offload_samples: Vec<EllaOffloadSample>,
     pub traffic_samples: Vec<EllaTrafficSample>,
+    pub channel_totals: Vec<EllaChannelTotals>,
+    pub frame_totals: Vec<EllaFrameTotals>,
     /// `(provider_id, instance_id) → side` from `INSTANCE_ATTACH`.
     pub instances: FxHashMap<(u16, u32), u8>,
     /// `provider_id → role` from `NODE_INFO`, the producer's own
@@ -893,6 +932,8 @@ impl EllaProfile {
             && self.frame_samples.is_empty()
             && self.offload_samples.is_empty()
             && self.traffic_samples.is_empty()
+            && self.channel_totals.is_empty()
+            && self.frame_totals.is_empty()
     }
 
     pub fn has_channel_counts(&self) -> bool {

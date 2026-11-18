@@ -1275,6 +1275,8 @@ pub fn ella_relay_has_hardcoded_decoder(event_id: u32) -> bool {
             | EVT_ELLA_RELAY_OFFLOAD_STATS
             | EVT_ELLA_RELAY_TRAFFIC_STATS
             | EVT_ELLA_RELAY_DELIVERED_STATS
+            | EVT_ELLA_RELAY_CHANNEL_TOTALS
+            | EVT_ELLA_RELAY_FRAME_TOTALS
             | EVT_ELLA_RELAY_FRAME_SENT
             | EVT_ELLA_RELAY_FRAME_RELAY
             | EVT_ELLA_RELAY_OBJECT_STATE
@@ -1749,6 +1751,32 @@ pub static ELLA_RELAY_EXPECTED: &[ExpectedEvent] = &[
             ExpectedField::new("joins", 12, 4),
             ExpectedField::new("switches", 16, 4),
             ExpectedField::new("subscriptions", 20, 4),
+        ],
+    },
+    ExpectedEvent {
+        event_id: EVT_ELLA_RELAY_CHANNEL_TOTALS,
+        fields: &[
+            ExpectedField::new("instance_id", 0, 4),
+            ExpectedField::new("subscribers", 4, 4),
+            ExpectedField::new("subscribers_pending", 8, 4),
+            ExpectedField::new("subscribers_leaving", 12, 4),
+            ExpectedField::new("objects_completed", 16, 8),
+            ExpectedField::new("object_bytes", 24, 8),
+            ExpectedField::new("packets", 32, 8),
+        ],
+    },
+    ExpectedEvent {
+        event_id: EVT_ELLA_RELAY_FRAME_TOTALS,
+        fields: &[
+            ExpectedField::new("instance_id", 0, 4),
+            ExpectedField::new("frames", 4, 8),
+            ExpectedField::new("frames_stretched", 12, 8),
+            ExpectedField::new("sum_frame_len", 20, 8),
+            ExpectedField::new("sum_planned_us", 28, 8),
+            ExpectedField::new("sum_actual_us", 36, 8),
+            ExpectedField::new("sum_fwd_us", 44, 8),
+            ExpectedField::new("sum_packets", 52, 8),
+            ExpectedField::new("max_overshoot_us", 60, 4),
         ],
     },
     ExpectedEvent {

@@ -622,7 +622,7 @@ fn draw_channel_series_block(
         let resp = ui.strong(RichText::new(heading).size(14.0));
         if heading == "Object Rate" {
             resp.on_hover_text(
-                "Payload Mbps. OBJECT_STATE bytes over STARTED→COMPLETED for the Timeline's selected worker, or CHANNEL_SAMPLE object_bytes per stats tick when those events are absent.",
+                "Payload Mbps. OBJECT_STATE bytes over STARTED→COMPLETED for the Timeline's selected worker, or CHANNEL_TOTALS / CHANNEL_SAMPLE object_bytes per stats tick when those events are absent.",
             );
         } else if heading == "Object Timing" {
             resp.on_hover_text(
@@ -630,11 +630,11 @@ fn draw_channel_series_block(
             );
         } else if heading == "Frame Rate" || heading.ends_with("Frame Rate") {
             resp.on_hover_text(
-                "Byte-weighted FDACE rate from FRAME_SENT / FRAME_RELAY, or FRAME_SAMPLE. Actual / Wire start on; Planned / Recv / Fwd start hidden.",
+                "Byte-weighted FDACE rate from FRAME_SENT / FRAME_RELAY, or FRAME_TOTALS / FRAME_SAMPLE. Actual / Wire start on; Planned / Recv / Fwd start hidden.",
             );
         } else if heading == "Frame Duration" || heading.ends_with("Frame Duration") {
             resp.on_hover_text(
-                "Mean per-frame duration from FRAME_SENT / FRAME_RELAY, or FRAME_SAMPLE. Intercept is Recv/Fwd holding above a shorter Wire.",
+                "Mean per-frame duration from FRAME_SENT / FRAME_RELAY, or FRAME_TOTALS / FRAME_SAMPLE. Intercept is Recv/Fwd holding above a shorter Wire.",
             );
         } else if heading == "Object Timeline" {
             resp.on_hover_text(
@@ -1664,7 +1664,9 @@ impl EventExplorerApp {
                                             EllaSubsView::PerChannel,
                                             RichText::new("Per channel").size(13.0),
                                         )
-                                        .on_hover_text("CHANNEL_SAMPLE occupancy per title.");
+                                        .on_hover_text(
+                                            "CHANNEL_TOTALS / CHANNEL_SAMPLE occupancy per title.",
+                                        );
                                     }
                                 });
                                 prepare_plot_slot(
@@ -1678,7 +1680,7 @@ impl EventExplorerApp {
                                     if !show_subs_selector {
                                         ui.label(
                                     RichText::new(
-                                        "Live downstream clients per title from CHANNEL_SAMPLE.",
+                                        "Live downstream clients per title from CHANNEL_TOTALS / CHANNEL_SAMPLE.",
                                     )
                                     .size(11.0)
                                     .color(Color32::from_gray(160)),
@@ -1942,7 +1944,7 @@ impl EventExplorerApp {
                                 ui.add_space(6.0);
                                 ui.strong(RichText::new(heading("Frame Send")).size(14.0))
                         .on_hover_text(
-                            "Byte-weighted FDACE rate from FRAME_SENT / FRAME_RELAY, or FRAME_SAMPLE, summed across titles. Actual / Wire start on; Planned / Recv / Fwd start hidden.",
+                            "Byte-weighted FDACE rate from FRAME_SENT / FRAME_RELAY, or FRAME_TOTALS / FRAME_SAMPLE, summed across titles. Actual / Wire start on; Planned / Recv / Fwd start hidden.",
                         );
                                 ui.label(
                                     RichText::new(if state.nodes[i].role == EllaNodeRole::Server {

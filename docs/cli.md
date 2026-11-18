@@ -1060,6 +1060,11 @@ the node (`server` / `relay` / `fanout_node#<id>`). JOIN_NEXT
 subscribers appear on `CHANNEL_COUNT` after the join boundary;
 per-channel `CHANNEL_SUBSCRIBER` counts include pending join
 immediately.
+The traffic, per-channel and frame sections print per-interval
+counts. Current ELLA logs `TRAFFIC_STATS`, `DELIVERED_STATS`,
+`CHANNEL_TOTALS` and `FRAME_TOTALS` as running totals; `ellastats`
+prints the difference from the previous sample of the same node and
+side, or channel and instance.
 
 ## `ellaevents [session]`
 

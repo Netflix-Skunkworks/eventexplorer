@@ -245,7 +245,9 @@ pub fn cmd_ella(prof: &EllaProfile, _capture_start: u64) {
     }
 }
 
-/// Dump `CHANNEL_COUNT`, `CHANNEL_COUNT_TOTAL`, and `CHANNEL_SAMPLE`.
+/// Dump `CHANNEL_COUNT`, `CHANNEL_COUNT_TOTAL`, `CHANNEL_SAMPLE` and
+/// `FRAME_SAMPLE`. `CHANNEL_TOTALS` / `FRAME_TOTALS` show as their
+/// per-interval differences.
 pub fn cmd_ella_stats(prof: &EllaProfile, capture_start: u64) {
     if prof.counts.is_empty()
         && prof.counts_total.is_empty()
@@ -254,7 +256,7 @@ pub fn cmd_ella_stats(prof: &EllaProfile, capture_start: u64) {
         && prof.offload_samples.is_empty()
     {
         println!(
-            "No CHANNEL_COUNT / CHANNEL_COUNT_TOTAL / CHANNEL_SAMPLE samples in this capture."
+            "No CHANNEL_COUNT / CHANNEL_COUNT_TOTAL / CHANNEL_SAMPLE / CHANNEL_TOTALS samples in this capture."
         );
         return;
     }
@@ -339,7 +341,7 @@ pub fn cmd_ella_stats(prof: &EllaProfile, capture_start: u64) {
             println!();
         }
         println!(
-            "=== CHANNEL_SAMPLE ({} samples) ===",
+            "=== CHANNEL_SAMPLE / CHANNEL_TOTALS ({} samples) ===",
             prof.channel_samples.len()
         );
         println!(
@@ -386,7 +388,7 @@ pub fn cmd_ella_stats(prof: &EllaProfile, capture_start: u64) {
             println!();
         }
         println!(
-            "=== FRAME_SAMPLE ({} samples) ===",
+            "=== FRAME_SAMPLE / FRAME_TOTALS ({} samples) ===",
             prof.frame_samples.len()
         );
         println!(

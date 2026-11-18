@@ -57,7 +57,11 @@ codebase has six provider-specific code paths:
   newer ELLA) is per-instance occupancy; `CHANNEL_COUNT_TOTAL` (id 151,
   `STATS`) is the process-wide up/dn occupancy (leave/retire per side);
   `CHANNEL_SAMPLE` (id 152, `STATS_CHANNEL`) is per-channel occupancy and
-  object rates. A capture may
+  object rates. Current ELLA logs `CHANNEL_TOTALS` (157), `FRAME_TOTALS`
+  (158), `TRAFFIC_STATS` (154) and `DELIVERED_STATS` (155) as running
+  totals; `finish_ella_profile` (`src/elog_parser/ella.rs`) differences
+  them after the load into the per-interval `CHANNEL_SAMPLE` /
+  `FRAME_SAMPLE` / `CHANNEL_COUNT_TOTAL` rows the plots read. A capture may
   list two `fanout_node` providers (ella_server + mrelay); role comes
   from `NODE_INFO` (id 2, ORIGIN → Server, RELAY → Relay) when the
   producer emits it, otherwise from the shape of that provider's

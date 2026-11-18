@@ -21,6 +21,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   CDN metrics plots use the difference between successive samples per
   node and side; a decrease counts as a restart. `OFFLOAD_STATS` moves
   to 156. Earlier u32-delta builds still decode.
+- ELLA `fanout_node` `CHANNEL_TOTALS` (157) and `FRAME_TOTALS` (158),
+  which replace the deprecated `CHANNEL_SAMPLE` (152) and `FRAME_SAMPLE`
+  (153) with per-channel totals. Their differences per channel and
+  instance feed the same subscriber, object-rate and frame plots and
+  `ellastats`; frame rates are Δbytes over Δduration. A channel's
+  CREATED starts its totals from zero and a decrease counts as a
+  re-created channel. Captures with the deprecated events still decode.
 
 ### Fixed
 

@@ -633,6 +633,38 @@ pub fn ingest_ella_relay(
             });
             true
         }
+        EVT_ELLA_RELAY_CHANNEL_TOTALS if r.typed() || size >= 40 => {
+            prof.channel_totals.push(EllaChannelTotals {
+                ts,
+                provider_id,
+                session_id,
+                instance_id: r.u32("instance_id", 0),
+                subscribers: r.u32("subscribers", 4),
+                subscribers_pending: r.u32("subscribers_pending", 8),
+                subscribers_leaving: r.u32("subscribers_leaving", 12),
+                objects_completed: r.u64("objects_completed", 16),
+                object_bytes: r.u64("object_bytes", 24),
+                packets: r.u64("packets", 32),
+            });
+            true
+        }
+        EVT_ELLA_RELAY_FRAME_TOTALS if r.typed() || size >= 64 => {
+            prof.frame_totals.push(EllaFrameTotals {
+                ts,
+                provider_id,
+                session_id,
+                instance_id: r.u32("instance_id", 0),
+                frames: r.u64("frames", 4),
+                frames_stretched: r.u64("frames_stretched", 12),
+                sum_frame_len: r.u64("sum_frame_len", 20),
+                sum_planned_us: r.u64("sum_planned_us", 28),
+                sum_actual_us: r.u64("sum_actual_us", 36),
+                sum_fwd_us: r.u64("sum_fwd_us", 44),
+                sum_packets: r.u64("sum_packets", 52),
+                max_overshoot_us: r.u32("max_overshoot_us", 60),
+            });
+            true
+        }
         EVT_ELLA_RELAY_OFFLOAD_STATS if r.typed() || size >= 32 => {
             let tail = r.typed() || size >= 48;
             prof.offload_samples.push(EllaOffloadSample {
@@ -750,7 +782,128 @@ pub fn ingest_ella_relay(
 pub fn finish_ella_profile(prof: &mut EllaProfile) {
     resolve_subscriber_clients(prof);
     fold_traffic_samples(prof);
+    difference_channel_totals(prof);
     apply_channel_sample_peaks(prof);
+}
+
+/// `(provider, session, instance)`.
+type ChannelKey = (u16, u64, u32);
+/// `(ts, key, seed)`: seed the key from zero, or forget its baseline.
+type TotalsMark = (u64, ChannelKey, bool);
+
+fn apply_marks<const N: usize>(
+    marks: &[TotalsMark],
+    next: &mut usize,
+    ts: u64,
+    diff: &mut CounterDiff<ChannelKey, N>,
+) {
+    while let Some(&(t, key, seed)) = marks.get(*next) {
+        if t > ts {
+            break;
+        }
+        if seed {
+            diff.seed(key);
+        } else {
+            diff.forget(&key);
+        }
+        *next += 1;
+    }
+}
+
+/// Turn CHANNEL_TOTALS / FRAME_TOTALS into the per-interval
+/// CHANNEL_SAMPLE / FRAME_SAMPLE the plots read, differencing per
+/// (provider, session, instance). An instance's CREATED starts it from
+/// zero and its CHANNEL_DESTROYED drops the baseline. A CHANNEL_TOTALS
+/// baseline still carries its levels; a FRAME_TOTALS baseline is dropped.
+fn difference_channel_totals(prof: &mut EllaProfile) {
+    if prof.channel_totals.is_empty() && prof.frame_totals.is_empty() {
+        return;
+    }
+    let mut marks: Vec<TotalsMark> = Vec::new();
+    for e in &prof.events {
+        let key = |inst: u32| (e.provider_id, e.session_id, inst);
+        match e.payload {
+            EllaPayload::ChannelState {
+                state: ELLA_LIFECYCLE_CREATED,
+                instance_id,
+                ..
+            } => marks.push((e.ts, key(instance_id), true)),
+            EllaPayload::ChannelDestroyed { instance_id, .. } => {
+                marks.push((e.ts, key(instance_id), false));
+            }
+            _ => {}
+        }
+    }
+    marks.sort_by_key(|m| m.0);
+    prof.channel_totals.sort_by_key(|s| s.ts);
+    prof.frame_totals.sort_by_key(|s| s.ts);
+
+    let mut diff: CounterDiff<ChannelKey, 3> = CounterDiff::default();
+    let mut m = 0;
+    let mut samples = Vec::with_capacity(prof.channel_totals.len());
+    for s in &prof.channel_totals {
+        apply_marks(&marks, &mut m, s.ts, &mut diff);
+        let key = (s.provider_id, s.session_id, s.instance_id);
+        let d = diff
+            .next(key, [s.objects_completed, s.object_bytes, s.packets])
+            .unwrap_or_default();
+        samples.push(EllaChannelSample {
+            ts: s.ts,
+            provider_id: s.provider_id,
+            session_id: s.session_id,
+            instance_id: s.instance_id,
+            subscribers: s.subscribers,
+            subscribers_pending: s.subscribers_pending,
+            subscribers_leaving: s.subscribers_leaving,
+            objects_completed: sat_u32(d[0]),
+            object_bytes: sat_u32(d[1]),
+            packets: sat_u32(d[2]),
+            inproc_attached: 0,
+            publish_no_ring: 0,
+            drain_skipped_pending: 0,
+        });
+    }
+    for s in &samples {
+        apply_channel_sample(prof, s);
+    }
+    prof.channel_samples.extend(samples);
+    prof.channel_samples.sort_by_key(|s| s.ts);
+
+    let mut diff: CounterDiff<ChannelKey, 7> = CounterDiff::default();
+    let mut m = 0;
+    for s in &prof.frame_totals {
+        apply_marks(&marks, &mut m, s.ts, &mut diff);
+        let key = (s.provider_id, s.session_id, s.instance_id);
+        let Some(d) = diff.next(
+            key,
+            [
+                s.frames,
+                s.frames_stretched,
+                s.sum_frame_len,
+                s.sum_planned_us,
+                s.sum_actual_us,
+                s.sum_fwd_us,
+                s.sum_packets,
+            ],
+        ) else {
+            continue;
+        };
+        prof.frame_samples.push(EllaFrameSample {
+            ts: s.ts,
+            provider_id: s.provider_id,
+            session_id: s.session_id,
+            instance_id: s.instance_id,
+            frames: sat_u32(d[0]),
+            frames_stretched: sat_u32(d[1]),
+            sum_frame_len: sat_u32(d[2]),
+            sum_planned_us: sat_u32(d[3]),
+            sum_actual_us: sat_u32(d[4]),
+            sum_fwd_us: sat_u32(d[5]),
+            max_overshoot_us: s.max_overshoot_us,
+            sum_packets: sat_u32(d[6]),
+        });
+    }
+    prof.frame_samples.sort_by_key(|s| s.ts);
 }
 
 /// Per-key differences of cumulative counters. A key's first sample is
@@ -1884,6 +2037,258 @@ mod tests {
         assert!(s.cumulative);
         assert_eq!(s.side, Some(ELLA_SIDE_DOWNSTREAM));
         assert_eq!((s.packets, s.new_clients), (5_000_000_000, 40_000_000_000));
+    }
+
+    fn channel_totals_payload(inst: u32, subs: u32, objects: u64, bytes: u64) -> Vec<u8> {
+        let mut b = Vec::new();
+        for v in [inst, subs, 1, 2] {
+            b.extend_from_slice(&v.to_le_bytes());
+        }
+        for v in [objects, bytes, bytes / 1000] {
+            b.extend_from_slice(&v.to_le_bytes());
+        }
+        assert_eq!(b.len(), 40);
+        b
+    }
+
+    fn frame_totals_payload(inst: u32, frames: u64, len: u64, actual_us: u64) -> Vec<u8> {
+        let mut b = inst.to_le_bytes().to_vec();
+        for v in [
+            frames,
+            frames / 2,
+            len,
+            actual_us * 2,
+            actual_us,
+            0,
+            frames * 10,
+        ] {
+            b.extend_from_slice(&v.to_le_bytes());
+        }
+        b.extend_from_slice(&77u32.to_le_bytes());
+        assert_eq!(b.len(), 64);
+        b
+    }
+
+    fn ingest_at(prof: &mut EllaProfile, ts: u64, session_id: u64, event_id: u32, b: &[u8]) {
+        assert!(ingest_ella_relay(
+            prof,
+            ts,
+            0,
+            0,
+            6,
+            session_id,
+            event_id,
+            b,
+            0,
+            b.len(),
+            None
+        ));
+    }
+
+    /// CHANNEL_TOTALS counters are totals since the channel was created:
+    /// the plots get per-instance differences, levels pass through, and a
+    /// decrease is a re-created channel.
+    #[test]
+    fn channel_totals_become_per_interval_samples() {
+        let mut prof = EllaProfile::default();
+        let t = EVT_ELLA_RELAY_CHANNEL_TOTALS;
+        // Instance 2 predates the capture; its first sample is a baseline.
+        ingest_at(
+            &mut prof,
+            3_000_000,
+            7,
+            t,
+            &channel_totals_payload(2, 4, 50, 9_000_000),
+        );
+        ingest_at(
+            &mut prof,
+            1_000_000,
+            7,
+            t,
+            &channel_totals_payload(2, 5, 40, 5_000_000),
+        );
+        ingest_at(
+            &mut prof,
+            2_000_000,
+            7,
+            t,
+            &channel_totals_payload(3, 1, 7, 6_000_000_000),
+        );
+        ingest_at(
+            &mut prof,
+            4_000_000,
+            7,
+            t,
+            &channel_totals_payload(2, 3, 2, 100_000),
+        );
+        assert!(prof.channel_samples.is_empty());
+        finish_ella_profile(&mut prof);
+        let got: Vec<(u64, u32, u32, u32, u32, u32)> = prof
+            .channel_samples
+            .iter()
+            .map(|s| {
+                (
+                    s.ts / 1_000_000,
+                    s.instance_id,
+                    s.subscribers,
+                    s.objects_completed,
+                    s.object_bytes,
+                    s.packets,
+                )
+            })
+            .collect();
+        assert_eq!(
+            got,
+            vec![
+                (1, 2, 5, 0, 0, 0),
+                (2, 3, 1, 0, 0, 0),
+                (3, 2, 4, 10, 4_000_000, 4_000),
+                (4, 2, 3, 2, 100_000, 100),
+            ]
+        );
+        assert_eq!(prof.channel_samples[0].subscribers_pending, 1);
+        assert_eq!(prof.channel_samples[0].subscribers_leaving, 2);
+    }
+
+    /// CREATED on an instance starts its totals from zero, so the first
+    /// sample after it is all traffic; CHANNEL_DESTROYED drops the
+    /// baseline so a re-created channel starts over.
+    #[test]
+    fn channel_totals_start_from_created_and_stop_at_destroyed() {
+        let mut prof = EllaProfile::default();
+        let t = EVT_ELLA_RELAY_CHANNEL_TOTALS;
+        let mut created = vec![ELLA_LIFECYCLE_CREATED, 0];
+        created.extend_from_slice(&2u32.to_le_bytes());
+        created.extend_from_slice(&1u32.to_le_bytes());
+        let mut destroyed = vec![1];
+        destroyed.extend_from_slice(&2u32.to_le_bytes());
+        destroyed.extend_from_slice(&0u32.to_le_bytes());
+        ingest_at(
+            &mut prof,
+            500_000,
+            7,
+            EVT_ELLA_RELAY_CHANNEL_STATE,
+            &created,
+        );
+        ingest_at(
+            &mut prof,
+            1_000_000,
+            7,
+            t,
+            &channel_totals_payload(2, 1, 3, 3_000),
+        );
+        ingest_at(
+            &mut prof,
+            2_000_000,
+            7,
+            EVT_ELLA_RELAY_CHANNEL_DESTROYED,
+            &destroyed,
+        );
+        ingest_at(
+            &mut prof,
+            3_000_000,
+            7,
+            t,
+            &channel_totals_payload(2, 1, 9, 9_000),
+        );
+        ingest_at(
+            &mut prof,
+            4_000_000,
+            7,
+            t,
+            &channel_totals_payload(2, 1, 10, 10_000),
+        );
+        finish_ella_profile(&mut prof);
+        let bytes: Vec<u32> = prof
+            .channel_samples
+            .iter()
+            .map(|s| s.object_bytes)
+            .collect();
+        assert_eq!(bytes, vec![3_000, 0, 1_000]);
+    }
+
+    /// FRAME_TOTALS differences become FRAME_SAMPLEs, so rate is
+    /// Δsum_frame_len / Δduration; a baseline with no prior total is
+    /// dropped and max_overshoot_us passes through.
+    #[test]
+    fn frame_totals_become_per_interval_samples() {
+        let mut prof = EllaProfile::default();
+        let f = EVT_ELLA_RELAY_FRAME_TOTALS;
+        ingest_at(
+            &mut prof,
+            2_000_000,
+            7,
+            f,
+            &frame_totals_payload(1, 30, 900_000, 9_000),
+        );
+        ingest_at(
+            &mut prof,
+            1_000_000,
+            7,
+            f,
+            &frame_totals_payload(1, 10, 100_000, 1_000),
+        );
+        ingest_at(
+            &mut prof,
+            3_000_000,
+            7,
+            f,
+            &frame_totals_payload(1, 4, 40_000, 400),
+        );
+        finish_ella_profile(&mut prof);
+        assert_eq!(prof.frame_samples.len(), 2);
+        let s = &prof.frame_samples[0];
+        assert_eq!(s.ts, 2_000_000);
+        assert_eq!((s.frames, s.frames_stretched, s.sum_packets), (20, 10, 200));
+        assert_eq!((s.sum_frame_len, s.sum_actual_us), (800_000, 8_000));
+        assert_eq!((s.sum_planned_us, s.sum_fwd_us), (16_000, 0));
+        assert_eq!(s.max_overshoot_us, 77);
+        // Restart: the new totals are the interval.
+        let s = &prof.frame_samples[1];
+        assert_eq!(
+            (s.frames, s.sum_frame_len, s.sum_actual_us),
+            (4, 40_000, 400)
+        );
+    }
+
+    #[test]
+    fn totals_schema_offsets() {
+        use crate::elog_parser::schema::test_support::{build_blob, FieldSpec};
+        let schema = ProviderSchema::parse(&build_blob(
+            "fanout_node",
+            "CHANNEL_TOTALS",
+            vec![
+                FieldSpec::scalar("instance_id", DECODE_TYPE_U32, 0),
+                FieldSpec::scalar("subscribers", DECODE_TYPE_U32, 4),
+                FieldSpec::scalar("subscribers_pending", DECODE_TYPE_U32, 8),
+                FieldSpec::scalar("subscribers_leaving", DECODE_TYPE_U32, 12),
+                FieldSpec::scalar("objects_completed", DECODE_TYPE_U64, 16),
+                FieldSpec::scalar("object_bytes", DECODE_TYPE_U64, 24),
+                FieldSpec::scalar("packets", DECODE_TYPE_U64, 32),
+            ],
+            EVT_ELLA_RELAY_CHANNEL_TOTALS,
+            "CHANNEL_TOTALS",
+            "",
+        ))
+        .unwrap();
+        let b = channel_totals_payload(2, 5, 7, 6_000_000_000);
+        let mut prof = EllaProfile::default();
+        assert!(ingest_ella_relay(
+            &mut prof,
+            1,
+            0,
+            0,
+            6,
+            7,
+            EVT_ELLA_RELAY_CHANNEL_TOTALS,
+            &b,
+            0,
+            b.len(),
+            Some(&schema),
+        ));
+        let s = &prof.channel_totals[0];
+        assert_eq!((s.instance_id, s.subscribers), (2, 5));
+        assert_eq!((s.object_bytes, s.packets), (6_000_000_000, 6_000_000));
     }
 
     #[test]
