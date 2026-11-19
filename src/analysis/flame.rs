@@ -355,6 +355,40 @@ impl FlameNode {
 pub const FLAME_GROUP_ADDR: u64 = u64::MAX;
 pub const KERNEL_GROUP_LABEL: &str = "kernel";
 pub const USER_GROUP_LABEL: &str = "user";
+pub const IDLE_GROUP_LABEL: &str = "[idle]";
+
+/// Add an [`IDLE_GROUP_LABEL`] bar under `tree`'s root sized to the
+/// sampler capacity of `filter`'s window and CPUs minus every sample
+/// taken there. The pid, comm and stack filters don't shrink it, so
+/// the bar is the box's idle time. Bar widths then read as a share
+/// of all CPU time.
+pub fn add_idle_base(tree: &mut FlameNode, profile: &CpuProfile, filter: &FlameFilter) {
+    let capacity = super::cpu_sample_capacity(profile, filter.ts_start_us, filter.ts_end_us);
+    if capacity <= 0.0 {
+        return;
+    }
+    let ncpu = super::cpu_count(profile).max(1);
+    let capacity = if filter.cpus.is_empty() {
+        capacity
+    } else {
+        capacity * filter.cpus.len().min(ncpu) as f64 / ncpu as f64
+    };
+    let busy = profile
+        .samples
+        .iter()
+        .filter(|s| s.ts >= filter.ts_start_us && s.ts <= filter.ts_end_us)
+        .filter(|s| filter.cpus.is_empty() || filter.cpus.contains(&s.cpu))
+        .count() as f64;
+    let idle = (capacity - busy).round();
+    if idle < 1.0 {
+        return;
+    }
+    let idle = idle as u64;
+    let node = tree.group_child_mut(IDLE_GROUP_LABEL, super::IDLE_PSEUDO_PID);
+    node.total_count += idle;
+    node.self_count += idle;
+    tree.total_count += idle;
+}
 
 /// amd64 user / kernel VA split. Used to decide whether a sample's
 /// pid is a user process (any user-space frame, or `USER_MODE`) so
@@ -1505,6 +1539,9 @@ pub fn flame_group_bar_label(profile: &CpuProfile, pid: u32) -> String {
     if pid == super::USER_PSEUDO_PID {
         return USER_GROUP_LABEL.to_string();
     }
+    if pid == super::IDLE_PSEUDO_PID {
+        return IDLE_GROUP_LABEL.to_string();
+    }
     if pid & 0xC000_0000 == 0x4000_0000 {
         let mut seen = FxHashSet::default();
         for ti in profile.threads.values() {
@@ -1596,6 +1633,52 @@ mod tests {
         assert!(!flame_pc_is_kernel(USER_KERNEL_BOUNDARY - 1));
         assert!(flame_pc_is_kernel(USER_KERNEL_BOUNDARY));
         assert!(flame_pc_is_kernel(0xffff_ffff_8000_0000));
+    }
+
+    #[test]
+    fn idle_base_is_capacity_minus_every_sample_in_window_and_cpus() {
+        let mut on_cpu1 = sample_at(3_000_000, 200, 200, 0, vec![0x1000]);
+        on_cpu1.cpu = 1;
+        let profile = CpuProfile {
+            samples: vec![sample_at(1_000_000, 100, 100, 0, vec![0x1000]), on_cpu1],
+            sample_rates: vec![SampleRateSegment {
+                start_us: 0,
+                hz: 100,
+                detected: true,
+            }],
+            ..CpuProfile::default()
+        };
+        let idle_of = |filter: &FlameFilter| {
+            let mut tree = build_flame_tree(&profile, filter, FlameAggregation::ByPc, true, true);
+            let busy = tree.total_count;
+            add_idle_base(&mut tree, &profile, filter);
+            let idle = tree
+                .children
+                .iter()
+                .find(|c| c.group_label.as_deref() == Some(IDLE_GROUP_LABEL))
+                .map(|c| {
+                    assert_eq!(c.pid, crate::analysis::IDLE_PSEUDO_PID);
+                    c.total_count
+                })
+                .unwrap_or(0);
+            assert_eq!(tree.total_count, busy + idle);
+            idle
+        };
+        assert_eq!(idle_of(&FlameFilter::default()), 398);
+        let pid_only = FlameFilter {
+            pids: vec![100],
+            ..FlameFilter::default()
+        };
+        assert_eq!(idle_of(&pid_only), 398);
+        let cpu0 = FlameFilter {
+            cpus: vec![0],
+            ..FlameFilter::default()
+        };
+        assert_eq!(idle_of(&cpu0), 199);
+        assert_eq!(
+            flame_group_bar_label(&profile, crate::analysis::IDLE_PSEUDO_PID),
+            IDLE_GROUP_LABEL
+        );
     }
 
     fn sample(pid: u32, tid: u32, flags: u8, frames: Vec<u64>) -> CpuStackSample {

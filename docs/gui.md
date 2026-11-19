@@ -1271,6 +1271,11 @@ the flame reclaims that vertical space.
       matches the CPU graph and makes the point where a stack enters the kernel
       visible at a glance. Search matches remain green. On by default; the
       choice is saved between sessions.
+    - **show idle** — add an `[idle]` bar to the bottom row, sized to
+      the sampler capacity of the time window and selected CPUs minus
+      every sample taken there. Bar widths then read as a share of all
+      CPU time. Process and stack filters don't shrink it. Off by
+      default; unavailable while comparing.
     - **kernel+offset labels** — toggle the `kernel+0xOFFSET`
       fallback. Symbolised frames are unaffected (they always win);
       off renders unresolved frames as raw hex.

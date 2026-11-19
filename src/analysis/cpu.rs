@@ -728,6 +728,8 @@ pub fn compute_process_usage_bins(
 /// of the `u32` range, far above any real pid.
 pub const KERNEL_PSEUDO_PID: u32 = u32::MAX;
 pub const USER_PSEUDO_PID: u32 = u32::MAX - 1;
+/// Synthetic pid of the flame graph's `[idle]` base bar.
+pub const IDLE_PSEUDO_PID: u32 = u32::MAX - 2;
 
 /// Compute a kernel-vs-user binned sample histogram aligned to `grid`,
 /// shaped as a [`ProcessUsageBins`] with exactly two synthetic rows
@@ -868,7 +870,12 @@ pub fn cpu_sample_capacity(profile: &CpuProfile, ts_start_us: u64, ts_end_us: u6
     if hi <= lo {
         return 0.0;
     }
-    let ncpu = match profile.kernel.as_ref().map(|k| k.ncpus) {
+    expected_samples(&profile.rate_timeline(), lo, hi) * cpu_count(profile) as f64
+}
+
+/// `KERNEL_INFO.ncpus`, or the number of distinct sampled CPUs.
+pub fn cpu_count(profile: &CpuProfile) -> usize {
+    match profile.kernel.as_ref().map(|k| k.ncpus) {
         Some(n) if n > 0 => n as usize,
         _ => profile
             .samples
@@ -876,8 +883,7 @@ pub fn cpu_sample_capacity(profile: &CpuProfile, ts_start_us: u64, ts_end_us: u6
             .map(|s| s.cpu)
             .collect::<FxHashSet<_>>()
             .len(),
-    };
-    expected_samples(&profile.rate_timeline(), lo, hi) * ncpu as f64
+    }
 }
 
 /// [`compute_process_summaries`] restricted to samples whose `ts`

@@ -8,6 +8,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Flame gear **Show idle**: an `[idle]` bar on the bottom row sized to
+  sampler capacity minus samples for the window and selected CPUs, so bar
+  widths read as a share of all CPU time.
 - ELLA `fanout_node` `SUBSCRIBER_LEAVE` (101), `SUBSCRIBER_CLIENT` (102),
   `SUBSCRIBER_JOINED` (103) and `NODE_IDENTITY` (3) decode, with
   `ellaevents` detail. A join takes its address and PBCID from the

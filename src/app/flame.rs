@@ -139,6 +139,9 @@ pub struct FlameViewState {
     /// frames retain the classic warm flame palette. On by default; a saved
     /// preference overrides it. Render-only: does not rebuild the tree.
     pub(crate) blue_user_palette: bool,
+    /// Add an `[idle]` bar to the base row so widths read as a share
+    /// of all CPU time. Rebuilds the tree.
+    pub(crate) show_idle: bool,
     /// Last-rendered hover info (for the bottom status strip). Kept in
     /// view state so it survives the egui "moved off the rect" frame.
     pub(crate) hovered: Option<HoveredFrame>,
@@ -359,6 +362,7 @@ impl FlameViewState {
             split_user_by_pid: false,
             organize: FlameOrganize::ByProcess,
             blue_user_palette: load_blue_user_flame(),
+            show_idle: false,
             hovered: None,
             min_bar_width_pct: 0.0,
             compare: None,
@@ -385,7 +389,7 @@ impl FlameViewState {
             return;
         }
         let (group_by_process, kernel_user_base, kernel_group) = self.organize.flags();
-        let tree = build_flame_tree_with_base(
+        let mut tree = build_flame_tree_with_base(
             profile,
             &self.filter,
             self.aggregation,
@@ -394,6 +398,9 @@ impl FlameViewState {
             kernel_user_base,
             kernel_group,
         );
+        if self.show_idle {
+            analysis::add_idle_base(&mut tree, profile, &self.filter);
+        }
         self.install_tree(tree);
     }
 
@@ -973,6 +980,20 @@ pub fn show_flame_gear_menu(
                 {
                     save_blue_user_flame(flame.blue_user_palette);
                 }
+                ui.add_enabled_ui(!comparing, |ui| {
+                    if ui
+                        .checkbox(&mut flame.show_idle, RichText::new("Show idle").size(12.0))
+                        .on_hover_text(
+                            "Add an `[idle]` bar to the bottom row: sampler capacity for \
+                             the time window and selected CPUs, minus every sample taken \
+                             there. Bar widths then read as a share of all CPU time. \
+                             Process and stack filters don't shrink it.",
+                        )
+                        .changed()
+                    {
+                        *needs_rebuild = true;
+                    }
+                });
                 ui.checkbox(
                     &mut flame.rel_text,
                     RichText::new("Kernel+offset labels").size(12.0),
@@ -1691,6 +1712,8 @@ fn flame_group_color(node: &FlameNode, highlight: bool) -> Color32 {
     }
     if node.group_label.as_deref() == Some(analysis::KERNEL_GROUP_LABEL) {
         per_pid_color(analysis::KERNEL_PSEUDO_PID)
+    } else if node.pid == analysis::IDLE_PSEUDO_PID {
+        Color32::from_gray(110)
     } else {
         per_pid_color(node.pid)
     }
@@ -2073,6 +2096,7 @@ impl EventExplorerApp {
         let target_window = (filter.ts_start_us, filter.ts_end_us);
         let aggregation = flame.aggregation;
         let split = flame.split_user_by_pid;
+        let show_idle = flame.show_idle;
         let (group_by_process, kernel_user_base, kernel_group) = flame.organize.flags();
         let (tx, rx) = mpsc::channel();
         let compute = move || match baseline {
@@ -2086,15 +2110,21 @@ impl EventExplorerApp {
                 kernel_user_base,
                 kernel_group,
             )),
-            None => FlameBuild::Single(build_flame_tree_with_base(
-                &profile,
-                &filter,
-                aggregation,
-                split,
-                group_by_process,
-                kernel_user_base,
-                kernel_group,
-            )),
+            None => {
+                let mut tree = build_flame_tree_with_base(
+                    &profile,
+                    &filter,
+                    aggregation,
+                    split,
+                    group_by_process,
+                    kernel_user_base,
+                    kernel_group,
+                );
+                if show_idle {
+                    analysis::add_idle_base(&mut tree, &profile, &filter);
+                }
+                FlameBuild::Single(tree)
+            }
         };
         #[cfg(not(target_arch = "wasm32"))]
         std::thread::spawn(move || {
@@ -3726,7 +3756,11 @@ impl EventExplorerApp {
                             } else {
                                 selector_for_node(node)
                             };
-                            if click_mods.alt {
+                            let idle_bar =
+                                node.pid == analysis::IDLE_PSEUDO_PID && node.group_label.is_some();
+                            if (click_mods.alt || click_mods.command) && idle_bar {
+                                // `[idle]` stands for absent samples; no stack can match it.
+                            } else if click_mods.alt {
                                 exclude_sel = Some(sel);
                             } else if click_mods.command {
                                 pending_toggle = Some(sel);
@@ -4611,6 +4645,7 @@ mod tests {
             split_user_by_pid: false,
             organize: FlameOrganize::ByProcess,
             blue_user_palette: false,
+            show_idle: false,
             hovered: None,
             min_bar_width_pct: 0.0,
             compare: None,
