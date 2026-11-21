@@ -1319,6 +1319,9 @@ pub struct InterfacesViewState {
     pub(crate) rx_ifindex: Option<u16>,
     /// TX queue drops on the Network TX plot.
     pub(crate) show_tx_errors: bool,
+    /// Throughput includes Ethernet framing (estimated wire rate).
+    pub(crate) tx_wire_rate: bool,
+    pub(crate) rx_wire_rate: bool,
     /// Frames left to force-repaint after (re)building so egui_plot's
     /// auto-fit settles without waiting for a mouse/keyboard event.
     pub(crate) settle_frames: u8,
@@ -1335,6 +1338,8 @@ impl InterfacesViewState {
             tx_ifindex: None,
             rx_ifindex: None,
             show_tx_errors: true,
+            tx_wire_rate: false,
+            rx_wire_rate: false,
             settle_frames: SETTLE_FRAMES,
         }
     }
@@ -1362,6 +1367,7 @@ fn iface_rate_header(
     candidates: &[usize],
     selected: &mut Option<u16>,
     show_errors: Option<&mut bool>,
+    wire_rate: &mut bool,
 ) {
     ui.add_space(6.0);
     ui.horizontal(|ui| {
@@ -1414,7 +1420,85 @@ fn iface_rate_header(
                 *show = on;
             }
         }
+        ui.add_space(8.0);
+        iface_gear(ui, combo_id, *metric, wire_rate);
     });
+}
+
+/// Gear button + popup with the Network TX/RX plot options.
+fn iface_gear(ui: &mut egui::Ui, id_salt: &str, metric: IfMetric, wire_rate: &mut bool) {
+    let popup_id = ui.make_persistent_id(("iface_gear", id_salt));
+    let is_open = ui
+        .memory(|m| m.data.get_temp::<bool>(popup_id))
+        .unwrap_or(false);
+
+    let button_h = ui.spacing().interact_size.y;
+    let (rect, response) =
+        ui.allocate_exact_size(egui::vec2(button_h, button_h), egui::Sense::click());
+    let visuals = if is_open {
+        ui.visuals().widgets.open
+    } else {
+        *ui.style().interact(&response)
+    };
+    ui.painter().rect(
+        rect.expand(visuals.expansion),
+        visuals.rounding,
+        visuals.bg_fill,
+        visuals.bg_stroke,
+    );
+    ui.painter().text(
+        rect.center(),
+        egui::Align2::CENTER_CENTER,
+        "\u{2699}",
+        egui::FontId::proportional(14.0),
+        visuals.text_color(),
+    );
+    if response.on_hover_text("Plot options").clicked() {
+        ui.memory_mut(|m| m.data.insert_temp(popup_id, !is_open));
+    }
+    if !is_open {
+        return;
+    }
+
+    let area_resp = egui::Area::new(popup_id.with("area"))
+        .order(egui::Order::Foreground)
+        .fixed_pos(rect.left_bottom() + egui::vec2(0.0, 4.0))
+        .pivot(egui::Align2::LEFT_TOP)
+        .constrain_to(ui.ctx().screen_rect())
+        .show(ui.ctx(), |ui| {
+            egui::Frame::popup(ui.style()).show(ui, |ui| {
+                ui.set_max_width(300.0);
+                let enabled = metric == IfMetric::Throughput;
+                ui.add_enabled(
+                    enabled,
+                    egui::Checkbox::new(
+                        wire_rate,
+                        RichText::new("Include Ethernet framing (wire rate)").size(12.0),
+                    ),
+                )
+                .on_hover_text(
+                    "Estimate the bit rate on the wire. All Interfaces adds \
+                     24 B per packet (FCS, preamble/SFD, inter-frame gap) to \
+                     the NIC's L2 byte counters. Single Interface starts from \
+                     IP-layer bytes: it splits TSO/LRO super-packets into \
+                     MTU-sized frames, re-adds each frame's IP/L4 header, and \
+                     adds 38 B of Ethernet per frame. VLAN tags are not counted.",
+                )
+                .on_disabled_hover_text("Applies to Throughput only.");
+            });
+        });
+
+    let popup_rect = area_resp.response.rect;
+    if ui.ctx().input(|i| i.key_pressed(egui::Key::Escape)) {
+        ui.memory_mut(|m| m.data.insert_temp(popup_id, false));
+    }
+    if ui.ctx().input(|i| i.pointer.any_click()) {
+        if let Some(pos) = ui.ctx().input(|i| i.pointer.interact_pos()) {
+            if !rect.contains(pos) && !popup_rect.contains(pos) {
+                ui.memory_mut(|m| m.data.insert_temp(popup_id, false));
+            }
+        }
+    }
 }
 
 /// True when the interfaces on this plot recorded input/output errors
@@ -1603,7 +1687,9 @@ impl EventExplorerApp {
                     &candidates,
                     &mut state.tx_ifindex,
                     Some(&mut state.show_tx_errors),
+                    &mut state.tx_wire_rate,
                 );
+                let tx_wire = state.tx_wire_rate && state.tx_metric == IfMetric::Throughput;
                 let mode = if show_view {
                     state.tx_view
                 } else {
@@ -1618,6 +1704,11 @@ impl EventExplorerApp {
                     let iface = &state.series[sel];
                     let proto_cum = iface.proto_cum.as_ref().unwrap();
                     let (cum, to_rate_per_sec, y_label) = match state.tx_metric {
+                        IfMetric::Throughput if tx_wire => (
+                            &proto_cum.tx_wire_bytes,
+                            analysis::BYTES_PER_S_TO_GBPS,
+                            "Gb/s (wire)",
+                        ),
                         IfMetric::Throughput => {
                             (&proto_cum.tx_bytes, analysis::BYTES_PER_S_TO_GBPS, "Gb/s")
                         }
@@ -1648,6 +1739,7 @@ impl EventExplorerApp {
                         name: state.series[i].name.clone(),
                         color: series_color(i),
                         data: match state.tx_metric {
+                            IfMetric::Throughput if tx_wire => &state.series[i].tx_wire_gbps,
                             IfMetric::Throughput => {
                                 state.series[i].tx_gbps_for(analysis::IfProtocol::All)
                             }
@@ -1679,7 +1771,11 @@ impl EventExplorerApp {
                 draw_series_plot_marked(
                     ui,
                     &pid("if_tx_plot"),
-                    if_metric_label(state.tx_metric),
+                    if tx_wire {
+                        "Gb/s (wire)"
+                    } else {
+                        if_metric_label(state.tx_metric)
+                    },
                     panel_h,
                     &tx_lines,
                     &[],
@@ -1702,7 +1798,9 @@ impl EventExplorerApp {
                     &candidates,
                     &mut state.rx_ifindex,
                     None,
+                    &mut state.rx_wire_rate,
                 );
+                let rx_wire = state.rx_wire_rate && state.rx_metric == IfMetric::Throughput;
                 let mode = if show_view {
                     state.rx_view
                 } else {
@@ -1716,6 +1814,11 @@ impl EventExplorerApp {
                         .unwrap_or(candidates[0]);
                     let proto_cum = state.series[sel].proto_cum.as_ref().unwrap();
                     let (cum, to_rate_per_sec, y_label) = match state.rx_metric {
+                        IfMetric::Throughput if rx_wire => (
+                            &proto_cum.rx_wire_bytes,
+                            analysis::BYTES_PER_S_TO_GBPS,
+                            "Gb/s (wire)",
+                        ),
                         IfMetric::Throughput => {
                             (&proto_cum.rx_bytes, analysis::BYTES_PER_S_TO_GBPS, "Gb/s")
                         }
@@ -1741,6 +1844,7 @@ impl EventExplorerApp {
                         name: state.series[i].name.clone(),
                         color: series_color(i),
                         data: match state.rx_metric {
+                            IfMetric::Throughput if rx_wire => &state.series[i].rx_wire_gbps,
                             IfMetric::Throughput => {
                                 state.series[i].rx_gbps_for(analysis::IfProtocol::All)
                             }
@@ -1753,7 +1857,11 @@ impl EventExplorerApp {
                 draw_series_plot(
                     ui,
                     &pid("if_rx_plot"),
-                    if_metric_label(state.rx_metric),
+                    if rx_wire {
+                        "Gb/s (wire)"
+                    } else {
+                        if_metric_label(state.rx_metric)
+                    },
                     panel_h,
                     &rx_lines,
                     cursor,

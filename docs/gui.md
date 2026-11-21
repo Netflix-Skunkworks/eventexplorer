@@ -354,7 +354,8 @@ are shown; the rest start hidden, in this catalog order:
   to the right of the Interface dropdown and draws TX queue drops
   (`oqdrops`) on this plot. It is grayed out when that interface
   recorded no input/output errors and no queue drops (in All
-  Interfaces, when none of the active NICs did). See
+  Interfaces, when none of the active NICs did). The gear at the end of
+  the row has **Include Ethernet framing (wire rate)**. See
   [Network Interfaces](#network-interfaces).
 - **HTTP Responses Per Second** — completed nginx responses per second,
   one line per status class (`2xx`, `4xx`, …), from `NGINX_SAMPLE` when
@@ -714,6 +715,17 @@ all-protocol totals — "which NICs are busy":
   it. The scale follows the visible window. Hiding a drops series in
   the legend takes it off the scale. Unchecking the box removes the
   lines and the drops labels.
+
+The gear at the right end of each header row opens **Include Ethernet
+framing (wire rate)**, which applies to Throughput only. The NIC byte
+counters behind All Interfaces are L2 (Ethernet header, no FCS), so the
+option adds 24 B per packet for FCS, preamble/SFD and the inter-frame
+gap. The Single Interface stack counts IP packets before encapsulation,
+and a TSO/LRO super-packet counts once. With the option on, each sample
+interval's bytes are split into MTU-sized frames, the IP/L4 header is
+re-added per frame (52 B TCP, 28 B UDP, 20 B other) and 38 B of Ethernet
+is added per frame. VLAN tags are not counted. The y-axis reads
+**Gb/s (wire)**.
 
 **Single Interface** picks one interface and shows its TCP/UDP/Other
 composition as an absolute (not percentage) stacked-area chart — "how does

@@ -286,6 +286,11 @@ pub struct IfProtocolCumulative {
     pub tx_packets: [Vec<(u64, u64)>; 3],
     /// `ipackets`, one vec per `[tcp, udp, other]`.
     pub rx_packets: [Vec<(u64, u64)>; 3],
+    /// Estimated on-the-wire TX bytes, one vec per `[tcp, udp, other]`.
+    /// See [`wire_cumulative`].
+    pub tx_wire_bytes: [Vec<(u64, u64)>; 3],
+    /// Estimated on-the-wire RX bytes, one vec per `[tcp, udp, other]`.
+    pub rx_wire_bytes: [Vec<(u64, u64)>; 3],
 }
 
 /// Per-interface derived rate series, x in seconds relative to `t0_us`.
@@ -305,6 +310,9 @@ pub struct IfRateSeries {
     pub rx_gbps: Vec<[f64; 2]>,
     pub tx_pps: Vec<[f64; 2]>,
     pub rx_pps: Vec<[f64; 2]>,
+    /// `tx_gbps` / `rx_gbps` plus FCS, preamble/SFD and IFG per packet.
+    pub tx_wire_gbps: Vec<[f64; 2]>,
+    pub rx_wire_gbps: Vec<[f64; 2]>,
     pub tcp_tx_gbps: Vec<[f64; 2]>,
     pub tcp_rx_gbps: Vec<[f64; 2]>,
     pub tcp_tx_pps: Vec<[f64; 2]>,
@@ -406,6 +414,45 @@ impl IfRateSeries {
 
 pub const BYTES_PER_S_TO_GBPS: f64 = 8.0 / 1_000_000_000.0;
 
+/// Wire bytes per Ethernet frame beyond the L2 `obytes`/`ibytes` counters:
+/// 4 B FCS, 8 B preamble/SFD, 12 B inter-frame gap.
+pub const ETH_L1_OVERHEAD: u64 = 24;
+/// Wire bytes per Ethernet frame beyond the IP packet: 14 B header plus
+/// [`ETH_L1_OVERHEAD`].
+pub const ETH_WIRE_OVERHEAD: u64 = 14 + ETH_L1_OVERHEAD;
+/// IP+L4 header bytes replicated into every TSO/LRO segment, per
+/// `[tcp, udp, other]`: IPv4 + TCP with timestamps, IPv4 + UDP, IPv4.
+const SEGMENT_HDR_BYTES: [u64; 3] = [52, 28, 20];
+const DEFAULT_MTU: u64 = 1500;
+
+/// Cumulative on-the-wire bytes from the IP-layer `bytes`/`pkts` counters.
+///
+/// The tcp/udp/other counters see IP packets before L2 encapsulation, and a
+/// TSO/LRO super-packet counts once with one header. Per sample interval
+/// this splits the payload into `mtu`-sized frames, re-adds `hdr` per frame
+/// and adds [`ETH_WIRE_OVERHEAD`] per frame.
+pub fn wire_cumulative(
+    bytes: &[(u64, u64)],
+    pkts: &[(u64, u64)],
+    mtu: u64,
+    hdr: u64,
+) -> Vec<(u64, u64)> {
+    let mss = mtu.saturating_sub(hdr).max(1);
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut wire = 0u64;
+    for (i, (&(ts, b), &(_, p))) in bytes.iter().zip(pkts).enumerate() {
+        if i > 0 {
+            let db = b.saturating_sub(bytes[i - 1].1);
+            let dp = p.saturating_sub(pkts[i - 1].1);
+            let payload = db.saturating_sub(dp * hdr);
+            let frames = dp.max(payload.div_ceil(mss));
+            wire += payload + frames * (hdr + ETH_WIRE_OVERHEAD);
+        }
+        out.push((ts, wire));
+    }
+    out
+}
+
 /// Build one [`IfRateSeries`] per interface that emitted at least one
 /// `IF_SAMPLE`, sorted by ifindex.
 pub fn build_if_rate_series(prof: &IfProfile, t0_us: u64) -> Vec<IfRateSeries> {
@@ -461,6 +508,8 @@ pub fn build_if_rate_series(prof: &IfProfile, t0_us: u64) -> Vec<IfRateSeries> {
         let rx_gbps = gbps_series(&|s| s.ibytes);
         let tx_pps = pps_series(&|s| s.opackets);
         let rx_pps = pps_series(&|s| s.ipackets);
+        let tx_wire_gbps = gbps_series(&|s| s.obytes + s.opackets * ETH_L1_OVERHEAD);
+        let rx_wire_gbps = gbps_series(&|s| s.ibytes + s.ipackets * ETH_L1_OVERHEAD);
 
         let tcp_tx_gbps = gbps_series(&|s| s.tcp_obytes);
         let tcp_rx_gbps = gbps_series(&|s| s.tcp_ibytes);
@@ -499,27 +548,44 @@ pub fn build_if_rate_series(prof: &IfProfile, t0_us: u64) -> Vec<IfRateSeries> {
             || last.tcp_ibytes.saturating_sub(first.tcp_ibytes) > 0
             || last.udp_obytes.saturating_sub(first.udp_obytes) > 0
             || last.udp_ibytes.saturating_sub(first.udp_ibytes) > 0;
-        let proto_cum = has_protocol_classification.then(|| IfProtocolCumulative {
-            tx_bytes: [
+        let mtu = prof
+            .interfaces
+            .get(&idx)
+            .map(|i| u64::from(i.mtu))
+            .filter(|&m| m > 0)
+            .unwrap_or(DEFAULT_MTU);
+        let proto_cum = has_protocol_classification.then(|| {
+            let tx_bytes = [
                 collect(&|s| s.tcp_obytes),
                 collect(&|s| s.udp_obytes),
                 collect(&|s| s.other_obytes),
-            ],
-            rx_bytes: [
+            ];
+            let rx_bytes = [
                 collect(&|s| s.tcp_ibytes),
                 collect(&|s| s.udp_ibytes),
                 collect(&|s| s.other_ibytes),
-            ],
-            tx_packets: [
+            ];
+            let tx_packets = [
                 collect(&|s| s.tcp_opackets),
                 collect(&|s| s.udp_opackets),
                 collect(&|s| s.other_opackets),
-            ],
-            rx_packets: [
+            ];
+            let rx_packets = [
                 collect(&|s| s.tcp_ipackets),
                 collect(&|s| s.udp_ipackets),
                 collect(&|s| s.other_ipackets),
-            ],
+            ];
+            let wire = |b: &[Vec<(u64, u64)>; 3], p: &[Vec<(u64, u64)>; 3]| {
+                std::array::from_fn(|k| wire_cumulative(&b[k], &p[k], mtu, SEGMENT_HDR_BYTES[k]))
+            };
+            IfProtocolCumulative {
+                tx_wire_bytes: wire(&tx_bytes, &tx_packets),
+                rx_wire_bytes: wire(&rx_bytes, &rx_packets),
+                tx_bytes,
+                rx_bytes,
+                tx_packets,
+                rx_packets,
+            }
         });
 
         out.push(IfRateSeries {
@@ -538,6 +604,8 @@ pub fn build_if_rate_series(prof: &IfProfile, t0_us: u64) -> Vec<IfRateSeries> {
             rx_gbps,
             tx_pps,
             rx_pps,
+            tx_wire_gbps,
+            rx_wire_gbps,
             tcp_tx_gbps,
             tcp_rx_gbps,
             tcp_tx_pps,
@@ -11351,5 +11419,16 @@ mod tests {
         // object lane and does not flip when the second object's first frame
         // event is dropped.
         assert_eq!(frame_span_stripe(&plot.frame_spans), vec![1, 1, 2]);
+    }
+
+    #[test]
+    fn wire_cumulative_adds_framing_and_splits_super_packets() {
+        // One 1500 B UDP packet: 1500 + 38 on the wire.
+        let w = wire_cumulative(&[(0, 0), (1, 1500)], &[(0, 0), (1, 1)], 1500, 28);
+        assert_eq!(w, vec![(0, 0), (1, 1538)]);
+        // One TSO super-packet: 52 B header + 14480 B payload is ten
+        // 1448 B segments, each 1500 + 38 on the wire.
+        let w = wire_cumulative(&[(0, 0), (1, 14532)], &[(0, 0), (1, 1)], 1500, 52);
+        assert_eq!(w, vec![(0, 0), (1, 15380)]);
     }
 }
