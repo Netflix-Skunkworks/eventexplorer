@@ -463,14 +463,15 @@ struct SecondaryDraw<'a> {
     mapped: Vec<[f64; 2]>,
 }
 
-/// Map `lines` onto `0..plot_top` using one shared scale (the visible
-/// peak, plus the usual 8% headroom). Hidden and empty series are left
+/// Bucket `lines` like the other plots and map them onto `0..plot_top`
+/// using one shared scale (the visible peak, plus the usual 8% headroom). Hidden and empty series are left
 /// out of both the scale and the draw list.
 fn layout_secondary<'a>(
     lines: &'a [PlotLine<'a>],
     hidden: impl Fn(&str) -> bool,
     view: [f64; 2],
     plot_top: f64,
+    nbins: usize,
 ) -> Option<(f64, f64, Vec<SecondaryDraw<'a>>)> {
     if plot_top <= 0.0 {
         return None;
@@ -481,7 +482,7 @@ fn layout_secondary<'a>(
         if line.data.is_empty() || hidden(&line.name) {
             continue;
         }
-        let ds = downsample_mean(line.data, view, MAX_DISPLAY_POINTS);
+        let ds = bucket_rate_series(line.data, view, nbins);
         for p in &ds {
             peak = peak.max(p[1]);
         }
@@ -508,20 +509,12 @@ fn layout_secondary<'a>(
 
 fn fmt_drop_axis(v: f64) -> String {
     let av = v.abs();
-    if av >= 1_000_000.0 {
-        fmt_compact_unit(v / 1_000_000.0, "M")
-    } else if av >= 1_000.0 {
-        fmt_compact_unit(v / 1_000.0, "k")
+    if av >= 10_000_000.0 {
+        format!("{}M", (v / 1_000_000.0).round() as i64)
+    } else if av >= 10_000.0 {
+        format!("{}k", (v / 1_000.0).round() as i64)
     } else {
-        fmt_axis_num(v)
-    }
-}
-
-fn fmt_compact_unit(shown: f64, suffix: &str) -> String {
-    if (shown - shown.round()).abs() < 0.05 {
-        format!("{}{suffix}", shown.round() as i64)
-    } else {
-        format!("{shown:.1}{suffix}")
+        format!("{}", v.round() as i64)
     }
 }
 
@@ -568,21 +561,23 @@ fn paint_drop_axis(
     });
     let drops_per_plot = drop_top / plot_top;
     let font = egui::TextStyle::Body.resolve(ui.style());
+    let mut last_label = "0".to_string();
     for mark in marks {
         if mark.value.abs() < 1e-9 {
             continue;
         }
+        let label = fmt_drop_axis(mark.value * drops_per_plot);
+        if label == last_label {
+            continue;
+        }
+        last_label.clone_from(&label);
         let screen_y = transform
             .position_from_point(&PlotPoint {
                 x: 0.0,
                 y: mark.value,
             })
             .y;
-        let galley = painter.layout_no_wrap(
-            fmt_drop_axis(mark.value * drops_per_plot),
-            font.clone(),
-            color,
-        );
+        let galley = painter.layout_no_wrap(label, font.clone(), color);
         // Primary tick text is centered on the tick and right-aligned to
         // the plot edge. This one starts at that text's bottom.
         let pos = egui::pos2(
@@ -720,7 +715,13 @@ pub(crate) fn draw_series_plot_marked(
         (1.0, y_label)
     };
     let secondary_layout = if pin_y0 {
-        layout_secondary(secondary, |name| hidden.contains(name), view, y_hi)
+        layout_secondary(
+            secondary,
+            |name| hidden.contains(name),
+            view,
+            y_hi,
+            cursor.plot_bins,
+        )
     } else {
         None
     };
@@ -955,7 +956,8 @@ fn draw_protocol_stack(
         data: drops,
     }];
     let view = [vx0, vx1];
-    let secondary_layout = layout_secondary(&drop_line, |name| hidden.contains(name), view, y_top);
+    let secondary_layout =
+        layout_secondary(&drop_line, |name| hidden.contains(name), view, y_top, nbins);
     let y_axis = agg_y_axis_scaled(y_unit, y_scale);
     let band_points: [Vec<[f64; 2]>; 3] = std::array::from_fn(|k| {
         let ys = if band_top[k].is_empty() {
@@ -3403,13 +3405,15 @@ mod throughput_display_tests {
     }
 
     #[test]
-    fn drop_axis_compacts_thousands_and_millions() {
+    fn drop_axis_prints_whole_numbers() {
         assert_eq!(super::fmt_drop_axis(0.0), "0");
+        assert_eq!(super::fmt_drop_axis(0.4), "0");
+        assert_eq!(super::fmt_drop_axis(2.5), "3");
         assert_eq!(super::fmt_drop_axis(180.0), "180");
-        assert_eq!(super::fmt_drop_axis(1_500.0), "1.5k");
+        assert_eq!(super::fmt_drop_axis(1_395.4), "1395");
         assert_eq!(super::fmt_drop_axis(180_000.0), "180k");
-        assert_eq!(super::fmt_drop_axis(2_000_000.0), "2M");
-        assert_eq!(super::fmt_drop_axis(1_200_000.0), "1.2M");
+        assert_eq!(super::fmt_drop_axis(1_200_000.0), "1200k");
+        assert_eq!(super::fmt_drop_axis(20_000_000.0), "20M");
     }
 
     #[test]

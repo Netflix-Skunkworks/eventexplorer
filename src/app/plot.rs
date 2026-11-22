@@ -305,6 +305,22 @@ pub fn bucket_series(raw: &[[f64; 2]], view_range: [f64; 2], nbins: usize) -> Ve
     stepped
 }
 
+/// Time-weight a rate series into `nbins` equal buckets over `view_range`.
+/// Each `[t, r]` is the rate over the interval ending at `t`. Returns one
+/// point per bucket center, limited to buckets the samples cover.
+pub fn bucket_rate_series(raw: &[[f64; 2]], view_range: [f64; 2], nbins: usize) -> Vec<[f64; 2]> {
+    if raw.len() < 2 || nbins == 0 || view_range[1] <= view_range[0] {
+        return Vec::new();
+    }
+    let mut steps: Vec<[f64; 2]> = raw.windows(2).map(|w| [w[0][0], w[1][1]]).collect();
+    steps.push(raw[raw.len() - 1]);
+    let (first, last) = (raw[0][0], raw[raw.len() - 1][0]);
+    let half = (view_range[1] - view_range[0]) / nbins as f64 * 0.5;
+    let mut bins = analysis::step_series_bins(&steps, view_range[0], view_range[1], nbins);
+    bins.retain(|p| p[0] + half > first && p[0] - half < last);
+    bins
+}
+
 // ---------------------------------------------------------------------------
 // Grid step helpers
 // ---------------------------------------------------------------------------
@@ -1238,6 +1254,20 @@ mod tests {
         let raw = [[1.0, 30.0]];
         let binned = bucket_series(&raw, [0.0, 2.0], 2);
         assert!(binned.iter().all(|p| (p[1] - 30.0).abs() < 1e-9));
+    }
+
+    #[test]
+    fn bucket_rate_series_averages_each_rate_over_its_own_interval() {
+        let raw = [[0.0, 0.0], [1.0, 10.0], [2.0, 30.0], [3.0, 0.0], [4.0, 0.0]];
+        let one = bucket_rate_series(&raw, [0.0, 4.0], 1);
+        assert_eq!(one.len(), 1);
+        assert!((one[0][1] - 10.0).abs() < 1e-9);
+        let four = bucket_rate_series(&raw, [0.0, 4.0], 4);
+        let values: Vec<f64> = four.iter().map(|p| p[1]).collect();
+        assert_eq!(values.len(), 4);
+        assert!((values[0] - 10.0).abs() < 1e-9);
+        assert!((values[1] - 30.0).abs() < 1e-9);
+        assert!(values[2].abs() < 1e-9);
     }
 
     #[test]

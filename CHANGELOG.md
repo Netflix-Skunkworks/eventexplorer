@@ -36,6 +36,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   differenced like the other totals. `OFFLOAD_STATS` with
   `rxring_truncated` decodes too, and `ellastats` shows it.
 
+### Changed
+
+- Network TX drops/s: the line uses the Time buckets setting like the
+  other plots, and its axis labels are whole numbers.
+
 ### Fixed
 
 - Windows: `event_explorer.exe` and `elog_cli.exe` embed the app icon, so
