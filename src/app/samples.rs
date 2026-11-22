@@ -1405,28 +1405,26 @@ fn iface_rate_header(
             }
             single_iface_picker(ui, combo_id, series, candidates, selected);
         }
-        if let Some(show) = show_errors {
-            ui.add_space(12.0);
+        let errors = show_errors.map(|show| {
             let enabled = tx_errors_present(series, show_view, *view_mode, *selected);
-            let mut on = *show && enabled;
-            if ui
-                .add_enabled(
-                    enabled,
-                    egui::Checkbox::new(&mut on, RichText::new("Show Network Errors").size(13.0)),
-                )
-                .changed()
-                && enabled
-            {
-                *show = on;
-            }
-        }
-        ui.add_space(8.0);
-        iface_gear(ui, combo_id, *metric, wire_rate);
+            (show, enabled)
+        });
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            iface_gear(ui, combo_id, *metric, wire_rate, errors);
+        });
     });
 }
 
 /// Gear button + popup with the Network TX/RX plot options.
-fn iface_gear(ui: &mut egui::Ui, id_salt: &str, metric: IfMetric, wire_rate: &mut bool) {
+/// `errors` carries the Show Network Errors flag and whether this plot's
+/// interfaces recorded any errors or drops.
+fn iface_gear(
+    ui: &mut egui::Ui,
+    id_salt: &str,
+    metric: IfMetric,
+    wire_rate: &mut bool,
+    errors: Option<(&mut bool, bool)>,
+) {
     let popup_id = ui.make_persistent_id(("iface_gear", id_salt));
     let is_open = ui
         .memory(|m| m.data.get_temp::<bool>(popup_id))
@@ -1462,12 +1460,32 @@ fn iface_gear(ui: &mut egui::Ui, id_salt: &str, metric: IfMetric, wire_rate: &mu
 
     let area_resp = egui::Area::new(popup_id.with("area"))
         .order(egui::Order::Foreground)
-        .fixed_pos(rect.left_bottom() + egui::vec2(0.0, 4.0))
-        .pivot(egui::Align2::LEFT_TOP)
+        .fixed_pos(rect.right_bottom() + egui::vec2(0.0, 4.0))
+        .pivot(egui::Align2::RIGHT_TOP)
         .constrain_to(ui.ctx().screen_rect())
         .show(ui.ctx(), |ui| {
             egui::Frame::popup(ui.style()).show(ui, |ui| {
                 ui.set_max_width(300.0);
+                if let Some((show, enabled)) = errors {
+                    let mut on = *show && enabled;
+                    if ui
+                        .add_enabled(
+                            enabled,
+                            egui::Checkbox::new(
+                                &mut on,
+                                RichText::new("Show Network Errors").size(12.0),
+                            ),
+                        )
+                        .on_hover_text("Draw TX queue drops (oqdrops) on this plot.")
+                        .on_disabled_hover_text(
+                            "These interfaces recorded no input/output errors and no queue drops.",
+                        )
+                        .changed()
+                        && enabled
+                    {
+                        *show = on;
+                    }
+                }
                 let enabled = metric == IfMetric::Throughput;
                 ui.add_enabled(
                     enabled,

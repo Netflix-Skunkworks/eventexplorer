@@ -350,12 +350,13 @@ are shown; the rest start hidden, in this catalog order:
   (TCP/UDP/Other stacks); **All Interfaces** is one line per NIC.
   The choice sits on the same line as the title and the
   **Throughput** (Gb/s, or a smaller unit when the visible peak is under
-  1 Gb/s) / **Packets/s** toggle. On TX, **Show Network Errors** sits
-  to the right of the Interface dropdown and draws TX queue drops
+  1 Gb/s) / **Packets/s** toggle. A gear at the right end of the row
+  holds the plot options. On TX, **Show Network Errors** in the gear
+  menu draws TX queue drops
   (`oqdrops`) on this plot. It is grayed out when that interface
   recorded no input/output errors and no queue drops (in All
-  Interfaces, when none of the active NICs did). The gear at the end of
-  the row has **Include Ethernet framing (wire rate)**. See
+  Interfaces, when none of the active NICs did). The gear menu also has
+  **Include Ethernet framing (wire rate)**. See
   [Network Interfaces](#network-interfaces).
 - **HTTP Responses Per Second** — completed nginx responses per second,
   one line per status class (`2xx`, `4xx`, …), from `NGINX_SAMPLE` when
@@ -703,8 +704,7 @@ all-protocol totals — "which NICs are busy":
   lightly time-smoothed to absorb NIC counter-refresh jitter. Each plot's
   legend doubles as a hide/show toggle — click a name to drop it from the
   plot (and its y auto-fit). The two plots share a linked time axis.
-  **Show Network Errors**, on the Network TX header to the right of the
-  Interface dropdown, adds a solid red line for each interface whose TX
+  **Show Network Errors**, in the Network TX gear menu, adds a solid red line for each interface whose TX
   queue-drop counter (`oqdrops`, `IFCOUNTER_OQDROPS`) advanced. The
   checkbox is grayed out when the selected interface recorded no
   input/output errors and no queue drops; All Interfaces grays it out
@@ -716,7 +716,7 @@ all-protocol totals — "which NICs are busy":
   the legend takes it off the scale. Unchecking the box removes the
   lines and the drops labels.
 
-The gear at the right end of each header row opens **Include Ethernet
+The gear at the right end of each header row also has **Include Ethernet
 framing (wire rate)**, which applies to Throughput only. The NIC byte
 counters behind All Interfaces are L2 (Ethernet header, no FCS), so the
 option adds 24 B per packet for FCS, preamble/SFD and the inter-frame
@@ -748,8 +748,8 @@ this interface's traffic break down":
   schema `other` is derived as total minus TCP minus UDP — see
   [file-format.md](file-format.md#if-provider-event-id-catalog).
   The TX stack draws the same solid **drops/s** line as All Interfaces,
-  for the selected interface. **Show Network Errors** sits to the right
-  of the Interface dropdown.
+  for the selected interface. **Show Network Errors** is in the gear
+  menu.
 
 On a typical OCA the physical NICs and their `lagg` aggregate dominate; per
 member NIC the per-sample rate is bursty (RSS spreads flows), so each line is
