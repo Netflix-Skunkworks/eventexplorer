@@ -538,7 +538,7 @@ fn paint_drop_axis(
         egui::pos2(plot_rect.left(), plot_rect.bottom()),
     );
     let painter = ui.painter().with_clip_rect(gutter);
-    let color = COLOR_SSTHRESH;
+    let color = COLOR_IF_DROPS;
     let unit = painter.layout_no_wrap(
         "drops/s".to_string(),
         egui::FontId::proportional(12.0),
@@ -952,7 +952,7 @@ fn draw_protocol_stack(
     };
     let drop_line = [PlotLine {
         name: "Drops".to_string(),
-        color: COLOR_SSTHRESH,
+        color: COLOR_IF_DROPS,
         data: drops,
     }];
     let view = [vx0, vx1];
@@ -1780,7 +1780,7 @@ impl EventExplorerApp {
                             } else {
                                 Some(PlotLine {
                                     name: format!("{} drops", s.name),
-                                    color: COLOR_SSTHRESH,
+                                    color: COLOR_IF_DROPS,
                                     data: &s.oqdrop_rate,
                                 })
                             }

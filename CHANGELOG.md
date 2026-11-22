@@ -39,7 +39,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Changed
 
 - Network TX drops/s: the line uses the Time buckets setting like the
-  other plots, and its axis labels are whole numbers.
+  other plots, and its axis labels are whole numbers. The line and its
+  axis are purple, apart from the UDP band's orange.
 
 ### Fixed
 
