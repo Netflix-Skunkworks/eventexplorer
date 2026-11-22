@@ -686,8 +686,9 @@ impl CpuUsagePanel {
     ) {
         ui.horizontal(|ui| {
             ui.strong(RichText::new(title).size(14.0));
-            ui.add_space(6.0);
-            self.show_gear(ui, id_salt, scale_cpu_by_freq, zoom_to_window);
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                self.show_gear(ui, id_salt, scale_cpu_by_freq, zoom_to_window);
+            });
         });
     }
 
@@ -740,8 +741,8 @@ impl CpuUsagePanel {
         const POPUP_W: f32 = 260.0;
         let area = egui::Area::new(popup_id.with("area"))
             .order(egui::Order::Foreground)
-            .fixed_pos(rect.left_bottom() + egui::vec2(0.0, 4.0))
-            .pivot(egui::Align2::LEFT_TOP)
+            .fixed_pos(rect.right_bottom() + egui::vec2(0.0, 4.0))
+            .pivot(egui::Align2::RIGHT_TOP)
             .constrain_to(ui.ctx().screen_rect());
         let area_resp = area.show(ui.ctx(), |ui| {
             egui::Frame::popup(ui.style()).show(ui, |ui| {

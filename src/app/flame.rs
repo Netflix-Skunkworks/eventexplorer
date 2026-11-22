@@ -2406,24 +2406,27 @@ impl EventExplorerApp {
                         }
                         ui.add_space(6.0);
                     }
-                    if show_baseline {
-                        if let Some(bp) = flame.compare.as_mut().and_then(|c| c.cpu_panel.as_mut())
-                        {
-                            bp.show_gear(
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if show_baseline {
+                            if let Some(bp) =
+                                flame.compare.as_mut().and_then(|c| c.cpu_panel.as_mut())
+                            {
+                                bp.show_gear(
+                                    ui,
+                                    "flame_baseline_cpu",
+                                    &mut scale_cpu_by_freq,
+                                    &mut cpu_zoom,
+                                );
+                            }
+                        } else if let Some(p) = panel.as_mut() {
+                            p.show_gear(
                                 ui,
-                                "flame_baseline_cpu",
+                                "aggregate_cpu_panel",
                                 &mut scale_cpu_by_freq,
                                 &mut cpu_zoom,
                             );
                         }
-                    } else if let Some(p) = panel.as_mut() {
-                        p.show_gear(
-                            ui,
-                            "aggregate_cpu_panel",
-                            &mut scale_cpu_by_freq,
-                            &mut cpu_zoom,
-                        );
-                    }
+                    });
                 });
                 if cpu_zoom && !cpu_zoom_before {
                     let (lo, hi) = (flame.filter.ts_start_us, flame.filter.ts_end_us);
