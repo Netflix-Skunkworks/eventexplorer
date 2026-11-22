@@ -687,6 +687,7 @@ impl CpuUsagePanel {
         ui.horizontal(|ui| {
             ui.strong(RichText::new(title).size(14.0));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.add_space(scroll_bar_clearance(ui));
                 self.show_gear(ui, id_salt, scale_cpu_by_freq, zoom_to_window);
             });
         });

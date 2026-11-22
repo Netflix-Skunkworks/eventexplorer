@@ -1412,6 +1412,7 @@ fn iface_rate_header(
             (show, enabled)
         });
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            ui.add_space(scroll_bar_clearance(ui));
             iface_gear(ui, combo_id, *metric, wire_rate, errors);
         });
     });

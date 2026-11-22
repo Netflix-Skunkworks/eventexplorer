@@ -2407,6 +2407,7 @@ impl EventExplorerApp {
                         ui.add_space(6.0);
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.add_space(scroll_bar_clearance(ui));
                         if show_baseline {
                             if let Some(bp) =
                                 flame.compare.as_mut().and_then(|c| c.cpu_panel.as_mut())

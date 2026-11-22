@@ -15,6 +15,13 @@
 #[allow(unused_imports)]
 use super::*;
 
+/// Right margin that keeps a right-aligned header widget clear of the
+/// window's vertical scroll bar.
+pub fn scroll_bar_clearance(ui: &egui::Ui) -> f32 {
+    let s = &ui.spacing().scroll;
+    s.bar_width + s.bar_inner_margin + s.bar_outer_margin
+}
+
 pub fn plot_ids(session_id: u64) -> [String; 5] {
     [
         format!("rtt_plot_{session_id}"),

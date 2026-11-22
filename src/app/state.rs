@@ -3687,6 +3687,7 @@ impl EventExplorerApp {
             let prev_filter = self.filter_low_events;
             ui.horizontal(|ui| {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.add_space(scroll_bar_clearance(ui));
                     ui.checkbox(
                         &mut self.filter_low_events,
                         RichText::new("Hide short sessions (<250 events or <1s)").size(12.0),
@@ -5246,6 +5247,7 @@ impl EventExplorerApp {
                 );
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.add_space(scroll_bar_clearance(ui));
                 // Custom-drawn gear button: egui's default text layout baselines the
                 // U+2699 glyph near the bottom of its line box, which makes it look
                 // visibly off-center inside a standard `menu_button`. Painting the
