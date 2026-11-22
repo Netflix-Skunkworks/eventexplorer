@@ -292,7 +292,7 @@ pub const COLOR_IF_UDP: Color32 = Color32::from_rgb(0xFF, 0x70, 0x43);
 /// protocol" gray used elsewhere (e.g. goodput bucket 0).
 pub const COLOR_IF_OTHER: Color32 = Color32::from_rgb(0x9E, 0x9E, 0x9E);
 /// Network TX drops/s line and axis -- purple, apart from the band colors.
-pub const COLOR_IF_DROPS: Color32 = Color32::from_rgb(0xBA, 0x68, 0xC8);
+pub const COLOR_IF_DROPS: Color32 = Color32::from_rgb(0xAB, 0x47, 0xBC);
 
 /// Band color for goodput log2 bucket `b` in the stacked distribution-over-
 /// time plot. Bucket 0 (`flsll(0)` — a goodput estimate that truncated to
