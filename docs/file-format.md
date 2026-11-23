@@ -705,7 +705,7 @@ executable basename from `PROC_MAP`/`USER_FILE` (then to
 | Bit | Name | Meaning |
 |-----|------|---------|
 | 0x01 | `USER_MODE` | Leaf was in user mode. The kernel sampler observes user PCs at the syscall entry trampoline. EventExplorer's `CpuProfile::symbolize(pc, pid)` tries the kernel resolver first (most samples are kernel-mode) and falls back to the per-pid `PROC_MAP` lookup when that misses, so this flag is informational rather than gating — the `pid` from the sample is enough to resolve user frames whether or not it's set. |
-| 0x02 | `IDLE` | Sampled thread was the per-CPU idle thread; `frames` is empty. EventExplorer drops these by default in the flame view. |
+| 0x02 | `IDLE` | Sampled thread was the per-CPU idle thread. Set together with `INTR`, it marks interrupt work on the idle thread's stack. EventExplorer keeps `IDLE` only on stacks rooted at `fork_exit` without `INTR` and counts the rest as busy. |
 | 0x04 | `INTR` | Sampled inside an interrupt handler (`td_intr_nesting_level > 0` or ithread). The captured stack reflects the handler, not the interrupted code. |
 | 0x08 | `TRUNC` | The kernel-side `stack_save_intr()` buffer was completely filled before reaching the bottom of the call stack. The buffer is `STACK_MAX` (currently 18 frames; see [`sys/sys/_stack.h`](https://github.com/freebsd/freebsd-src/blob/main/sys/sys/_stack.h)). A sample tagged TRUNC therefore has *exactly* `STACK_MAX` captured frames today and the bottom-most frame is *not* the real root of the call stack — it's wherever the unwinder happened to stop. EventExplorer drops these by default to avoid biasing aggregates toward the stop point. |
 
