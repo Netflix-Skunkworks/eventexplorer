@@ -544,12 +544,14 @@ pub struct ProcessUsageBins {
     /// always represents 100 % of samples without growing
     /// unboundedly with pid count.
     pub other_per_bin: Vec<u32>,
-    /// Per bin, the largest `(pid, count)` entries folded into
+    /// Per bin, the largest `(group, count)` entries folded into
     /// [`Self::other_per_bin`] (up to top-N, descending), so the cursor
-    /// readout can rank processes at that instant.
+    /// readout can rank processes at that instant. `group` indexes
+    /// [`Self::other_groups`].
     pub other_top_per_bin: Vec<Vec<(u32, u32)>>,
-    /// `comm` for every pid in [`Self::other_top_per_bin`].
-    pub other_comm: FxHashMap<u32, String>,
+    /// Groups referenced by [`Self::other_top_per_bin`]; their
+    /// `counts_per_bin` is empty.
+    pub other_groups: Vec<ProcessUsageInfo>,
     /// Same `peak_samples_per_bin` as the matching `CpuUsageBins`.
     /// Used as the denominator when converting raw counts to
     /// "CPUs busy" so the strip's y-axis matches the CPUs-busy
@@ -565,10 +567,14 @@ pub struct ProcessUsageBins {
 }
 
 /// Per-process metadata + per-bin sample histogram. One entry per
-/// pid in [`ProcessUsageBins::processes`].
+/// process group in [`ProcessUsageBins::processes`].
 #[derive(Debug, Clone)]
 pub struct ProcessUsageInfo {
+    /// First pid seen in the group (the flame's group-bar pid, which
+    /// picks the colour), or [`KERNEL_PSEUDO_PID`] for `kernel`.
     pub pid: u32,
+    /// Distinct pids folded into this group.
+    pub pid_count: usize,
     /// Best-effort `comm` (process command name) from any
     /// [`THREAD_CREATE`](EVT_CPU_THREAD_CREATE) event for any tid
     /// of this pid. Empty when the capture started after every
@@ -624,7 +630,8 @@ impl ProcessUsageBins {
         count as f64 / denom
     }
 
-    /// Largest "Other" pids in `bin` as `(pid, count)`, descending.
+    /// Largest "Other" groups in `bin` as `(group, count)`, descending;
+    /// `group` indexes [`Self::other_groups`].
     pub fn other_top_at(&self, bin: usize) -> &[(u32, u32)] {
         self.other_top_per_bin
             .get(bin)
@@ -648,17 +655,62 @@ impl ProcessUsageBins {
 /// The bin layout (t0_us, bin_us, bin_count) and normalisation
 /// denominator (peak_samples_per_bin) are taken from `grid` so the
 /// resulting strip stacks pixel-aligned with the [`CpuUsageBins`]
-/// strip rendered above it. Only the top `top_n` pids (by total
-/// busy sample count) get their own per-bin layer; everything else
-/// folds into `other_per_bin`.
+/// strip rendered above it. Pids join the same way the flame's
+/// **Group by process** bars and the Processes view's default rows do:
+/// user pids by `comm`, kernel threads onto one `kernel` group. Only the top `top_n` groups (by
+/// total busy sample count) get their own per-bin layer; everything
+/// else folds into `other_per_bin`.
 ///
 /// Idle samples (`CPU_SAMPLE_FLAG_IDLE`) are excluded from the
 /// counts — the strip is "which process was burning CPU when?",
 /// and an idle thread per CPU isn't an interesting process here.
-/// O(samples + pids × bins).
+/// O(samples + groups × bins) plus [`ProcessGroups::new`]; callers that
+/// re-bin often keep a [`ProcessGroups`] and use
+/// [`compute_process_usage_bins_grouped`].
 pub fn compute_process_usage_bins(
     samples: &[CpuStackSample],
     profile: &CpuProfile,
+    grid: &CpuUsageBins,
+    top_n: usize,
+) -> ProcessUsageBins {
+    compute_process_usage_bins_grouped(samples, &ProcessGroups::new(profile), grid, top_n)
+}
+
+/// Group label per pid, as the flame's **Group by process** bars
+/// assign them: `comm` for user pids, [`crate::analysis::KERNEL_GROUP_LABEL`]
+/// for kernel threads. Built once per profile; finding user pids walks
+/// every sample.
+#[derive(Debug, Clone, Default)]
+pub struct ProcessGroups {
+    labels: FxHashMap<u32, String>,
+}
+
+impl ProcessGroups {
+    pub fn new(profile: &CpuProfile) -> Self {
+        let user_pids = super::flame::collect_user_pids(profile);
+        let mut labels: FxHashMap<u32, String> = FxHashMap::default();
+        for s in &profile.samples {
+            if (s.flags & CPU_SAMPLE_FLAG_IDLE) != 0 || labels.contains_key(&s.pid) {
+                continue;
+            }
+            let label = super::flame::process_group_label_for_pid(s.pid, None, &user_pids, profile);
+            labels.insert(s.pid, label);
+        }
+        Self { labels }
+    }
+
+    fn label(&self, pid: u32) -> String {
+        self.labels
+            .get(&pid)
+            .cloned()
+            .unwrap_or_else(|| crate::analysis::KERNEL_GROUP_LABEL.to_string())
+    }
+}
+
+/// [`compute_process_usage_bins`] with a prebuilt [`ProcessGroups`].
+pub fn compute_process_usage_bins_grouped(
+    samples: &[CpuStackSample],
+    process_groups: &ProcessGroups,
     grid: &CpuUsageBins,
     top_n: usize,
 ) -> ProcessUsageBins {
@@ -669,30 +721,63 @@ pub fn compute_process_usage_bins(
     for &cpu in &grid.cpu_ids {
         selected[cpu as usize] = true;
     }
+    let busy =
+        |s: &CpuStackSample| (s.flags & CPU_SAMPLE_FLAG_IDLE) == 0 && selected[s.cpu as usize];
 
-    // Pass 1: total busy samples per pid (decides top-N).
-    let mut totals: FxHashMap<u32, u64> = FxHashMap::default();
+    // Pass 1: group per pid and total busy samples per group.
+    struct Group {
+        label: String,
+        pid: u32,
+        pid_count: usize,
+        total: u64,
+    }
+    let mut groups: Vec<Group> = Vec::new();
+    let mut group_of_label: FxHashMap<String, u32> = FxHashMap::default();
+    let mut group_of_pid: FxHashMap<u32, u32> = FxHashMap::default();
+    let mut sample_group: Vec<u32> = Vec::with_capacity(samples.len());
     for s in samples {
-        if (s.flags & CPU_SAMPLE_FLAG_IDLE) != 0 || !selected[s.cpu as usize] {
+        if !busy(s) {
+            sample_group.push(u32::MAX);
             continue;
         }
-        *totals.entry(s.pid).or_insert(0) += 1;
+        let g = *group_of_pid.entry(s.pid).or_insert_with(|| {
+            let label = process_groups.label(s.pid);
+            let g = *group_of_label.entry(label.clone()).or_insert_with(|| {
+                let pid = if label == crate::analysis::KERNEL_GROUP_LABEL {
+                    KERNEL_PSEUDO_PID
+                } else {
+                    s.pid
+                };
+                groups.push(Group {
+                    label,
+                    pid,
+                    pid_count: 0,
+                    total: 0,
+                });
+                (groups.len() - 1) as u32
+            });
+            groups[g as usize].pid_count += 1;
+            g
+        });
+        groups[g as usize].total += 1;
+        sample_group.push(g);
     }
-    if totals.is_empty() {
+    if groups.is_empty() {
         return ProcessUsageBins::default();
     }
 
-    // Top-N by total samples (desc). Tie-break by pid for
+    // Top-N by total samples (desc). Tie-break by label for
     // determinism — important so the same capture renders the
     // same colour bands on every reload.
-    let mut ranked: Vec<(u32, u64)> = totals.iter().map(|(&p, &t)| (p, t)).collect();
-    ranked.sort_unstable_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+    let mut ranked: Vec<u32> = (0..groups.len() as u32).collect();
+    ranked.sort_unstable_by(|&a, &b| {
+        let (a, b) = (&groups[a as usize], &groups[b as usize]);
+        b.total.cmp(&a.total).then(a.label.cmp(&b.label))
+    });
     let kept_n = ranked.len().min(top_n);
-    let kept_pids: Vec<u32> = ranked[..kept_n].iter().map(|(p, _)| *p).collect();
-    let kept_totals: Vec<u64> = ranked[..kept_n].iter().map(|(_, t)| *t).collect();
-    let mut pid_idx: FxHashMap<u32, usize> = FxHashMap::default();
-    for (i, &p) in kept_pids.iter().enumerate() {
-        pid_idx.insert(p, i);
+    let mut kept_idx: Vec<Option<usize>> = vec![None; groups.len()];
+    for (i, &g) in ranked[..kept_n].iter().enumerate() {
+        kept_idx[g as usize] = Some(i);
     }
 
     // Pass 2: per-bin sample counts.
@@ -700,58 +785,51 @@ pub fn compute_process_usage_bins(
         (0..kept_n).map(|_| vec![0u32; grid.bin_count]).collect();
     let mut other_per_bin = vec![0u32; grid.bin_count];
     let mut other_counts: FxHashMap<(usize, u32), u32> = FxHashMap::default();
-    for s in samples {
-        if (s.flags & CPU_SAMPLE_FLAG_IDLE) != 0 || !selected[s.cpu as usize] {
+    for (s, &g) in samples.iter().zip(&sample_group) {
+        if g == u32::MAX {
             continue;
         }
         let off_us = s.ts.saturating_sub(grid.t0_us);
         let bin = ((off_us / grid.bin_us) as usize).min(grid.bin_count - 1);
-        match pid_idx.get(&s.pid) {
-            Some(&idx) => counts_per_bin[idx][bin] += 1,
+        match kept_idx[g as usize] {
+            Some(idx) => counts_per_bin[idx][bin] += 1,
             None => {
                 other_per_bin[bin] += 1;
-                *other_counts.entry((bin, s.pid)).or_insert(0) += 1;
+                *other_counts.entry((bin, g)).or_insert(0) += 1;
             }
         }
     }
+    let info = |g: &Group, counts_per_bin: Vec<u32>| ProcessUsageInfo {
+        pid: g.pid,
+        pid_count: g.pid_count,
+        comm: g.label.clone(),
+        total_samples: g.total,
+        counts_per_bin,
+    };
     let mut other_top_per_bin: Vec<Vec<(u32, u32)>> = vec![Vec::new(); grid.bin_count];
-    for ((bin, pid), count) in other_counts {
-        other_top_per_bin[bin].push((pid, count));
+    for ((bin, g), count) in other_counts {
+        other_top_per_bin[bin].push((g, count));
     }
-    let mut other_comm: FxHashMap<u32, String> = FxHashMap::default();
+    let mut other_groups: Vec<ProcessUsageInfo> = Vec::new();
+    let mut other_idx: FxHashMap<u32, u32> = FxHashMap::default();
     for top in &mut other_top_per_bin {
-        top.sort_unstable_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+        top.sort_unstable_by(|a, b| {
+            b.1.cmp(&a.1)
+                .then_with(|| groups[a.0 as usize].label.cmp(&groups[b.0 as usize].label))
+        });
         top.truncate(top_n);
-        for &(pid, _) in top.iter() {
-            other_comm.entry(pid).or_insert_with(|| {
-                profile
-                    .process_comm_latest(pid)
-                    .map(str::to_string)
-                    .unwrap_or_default()
+        for entry in top.iter_mut() {
+            entry.0 = *other_idx.entry(entry.0).or_insert_with(|| {
+                other_groups.push(info(&groups[entry.0 as usize], Vec::new()));
+                (other_groups.len() - 1) as u32
             });
         }
     }
 
-    let mut comm_by_pid: FxHashMap<u32, &str> = FxHashMap::default();
-    for &pid in pid_idx.keys() {
-        if let Some(c) = profile.process_comm_latest(pid) {
-            comm_by_pid.insert(pid, c);
-        }
-    }
-
-    let processes: Vec<ProcessUsageInfo> = kept_pids
-        .into_iter()
-        .zip(kept_totals)
+    let processes: Vec<ProcessUsageInfo> = ranked[..kept_n]
+        .iter()
         .zip(counts_per_bin)
-        .map(|((pid, total), counts)| ProcessUsageInfo {
-            pid,
-            comm: comm_by_pid
-                .get(&pid)
-                .map(|s| s.to_string())
-                .unwrap_or_default(),
-            total_samples: total,
-            counts_per_bin: counts,
-        })
+        .map(|(&g, counts)| info(&groups[g as usize], counts))
         .collect();
 
     ProcessUsageBins {
@@ -761,7 +839,7 @@ pub fn compute_process_usage_bins(
         processes,
         other_per_bin,
         other_top_per_bin,
-        other_comm,
+        other_groups,
         peak_samples_per_bin: grid.peak_samples_per_bin,
         peak_per_bin: grid.peak_per_bin.clone(),
         freq_scale: grid.freq_scale.clone(),
@@ -825,12 +903,14 @@ pub fn compute_kernel_user_usage_bins(
         processes: vec![
             ProcessUsageInfo {
                 pid: KERNEL_PSEUDO_PID,
+                pid_count: 0,
                 comm: "Kernel".to_string(),
                 total_samples: kernel_total,
                 counts_per_bin: kernel_per_bin,
             },
             ProcessUsageInfo {
                 pid: USER_PSEUDO_PID,
+                pid_count: 0,
                 comm: "User".to_string(),
                 total_samples: user_total,
                 counts_per_bin: user_per_bin,
@@ -838,7 +918,7 @@ pub fn compute_kernel_user_usage_bins(
         ],
         other_per_bin: vec![0u32; grid.bin_count],
         other_top_per_bin: Vec::new(),
-        other_comm: FxHashMap::default(),
+        other_groups: Vec::new(),
         peak_samples_per_bin: grid.peak_samples_per_bin,
         peak_per_bin: grid.peak_per_bin.clone(),
         freq_scale: grid.freq_scale.clone(),

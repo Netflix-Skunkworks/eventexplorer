@@ -528,9 +528,10 @@ impl CpuUsagePanel {
         }
         let ncpus = cpu_bins.ncpus();
         let reference_freq_mhz = cpu_bins.reference_freq_mhz;
-        let process_bins = analysis::compute_process_usage_bins(
+        let process_groups = Arc::new(analysis::ProcessGroups::new(profile));
+        let process_bins = analysis::compute_process_usage_bins_grouped(
             &profile.samples,
-            profile,
+            &process_groups,
             &cpu_bins,
             TOP_PROCESSES_N,
         );
@@ -551,6 +552,7 @@ impl CpuUsagePanel {
             TOP_PROCESSES_N,
             reference_freq_mhz,
         );
+        process_strip.process_groups = process_groups;
         process_strip.plot_height = style.plot_height;
         process_strip.x_axis_title = style.x_axis_title.clone();
         process_strip.as_percent = true;
@@ -612,8 +614,12 @@ impl CpuUsagePanel {
         let ncpus = cpu_bins.ncpus();
         let reference_freq_mhz = cpu_bins.reference_freq_mhz;
         let top_n = self.process_strip.top_n;
-        let process_bins =
-            analysis::compute_process_usage_bins(&profile.samples, &profile, &cpu_bins, top_n);
+        let process_bins = analysis::compute_process_usage_bins_grouped(
+            &profile.samples,
+            &self.process_strip.process_groups,
+            &cpu_bins,
+            top_n,
+        );
         let kernel_user_bins =
             analysis::compute_kernel_user_usage_bins(&profile.samples, &cpu_bins);
         self.cpu_strip.bins = cpu_bins;
@@ -1417,6 +1423,8 @@ pub struct TopProcessesStripView {
     pub(crate) target_bins: usize,
     /// Top-N kept when re-binning Per-Process.
     pub(crate) top_n: usize,
+    /// Pid → group label, built once per profile and reused by re-bins.
+    pub(crate) process_groups: Arc<analysis::ProcessGroups>,
     /// Full-capture frequency reference, applied to zoomed grids so
     /// scale-by-freq matches the aggregate strip.
     pub(crate) reference_freq_mhz: Option<u16>,
@@ -1484,6 +1492,7 @@ impl TopProcessesStripView {
             profile,
             target_bins,
             top_n,
+            process_groups: Arc::default(),
             cpus: Vec::new(),
             reference_freq_mhz,
             zoom_cache: None,
@@ -1561,9 +1570,9 @@ impl TopProcessesStripView {
             let rebinned = if self.is_kernel_user {
                 analysis::compute_kernel_user_usage_bins(&samples[lo_idx..hi_idx], &grid)
             } else {
-                analysis::compute_process_usage_bins(
+                analysis::compute_process_usage_bins_grouped(
                     &samples[lo_idx..hi_idx],
-                    &self.profile,
+                    &self.process_groups,
                     &grid,
                     self.top_n,
                 )
@@ -1650,13 +1659,11 @@ impl TopProcessesStripView {
                 format!("{name}: {v:.1} CPUs busy")
             }
         };
-        let label = |pid: u32, comm: &str| -> String {
+        let label = |p: &analysis::ProcessUsageInfo| -> String {
             if self.is_kernel_user {
-                comm.to_string()
-            } else if comm.is_empty() {
-                format!("pid {pid}")
+                p.comm.clone()
             } else {
-                format!("{comm} (pid {pid})")
+                process_label(p)
             }
         };
         let freq = if self.scale_by_freq {
@@ -1670,14 +1677,14 @@ impl TopProcessesStripView {
         for (i, p) in bins.processes.iter().enumerate() {
             let indiv = self.scaled_cpus_busy_by_pid(bins, bin, i) * scale;
             cum += indiv;
-            rows.push((p.pid, label(p.pid, &p.comm), indiv, cum));
+            rows.push((p.pid, label(p), indiv, cum));
         }
         cum += self.scaled_cpus_busy_other(bins, bin) * scale;
         let total = cum;
-        for &(pid, count) in bins.other_top_at(bin) {
-            let comm = bins.other_comm.get(&pid).map_or("", |c| c.as_str());
+        for &(g, count) in bins.other_top_at(bin) {
+            let p = &bins.other_groups[g as usize];
             let v = bins.cpus_busy_count(bin, count) * freq * scale;
-            rows.push((pid, label(pid, comm), v, f64::NAN));
+            rows.push((p.pid, label(p), v, f64::NAN));
         }
         if !self.is_kernel_user {
             rows.sort_by(|a, b| b.2.total_cmp(&a.2).then(a.0.cmp(&b.0)));
@@ -1957,18 +1964,12 @@ impl TopProcessesStripView {
                         let t = strip_data_lo_s + bin as f64 * bin_s + bin_s * 0.5;
                         pts.push([t, *c]);
                     }
-                    let pid = bins.processes[i].pid;
-                    let comm = &bins.processes[i].comm;
-                    let label = if comm.is_empty() {
-                        format!("pid {pid}")
-                    } else {
-                        format!("{comm} (pid {pid})")
-                    };
+                    let p = &bins.processes[i];
                     plot_ui.line(
                         Line::new(PlotPoints::new(pts))
-                            .color(per_pid_color(pid))
+                            .color(per_pid_color(p.pid))
                             .width(1.0_f32)
-                            .name(label),
+                            .name(process_label(p)),
                     );
                 }
             }
@@ -2102,6 +2103,20 @@ impl TopProcessesStripView {
 /// [`analysis::USER_PSEUDO_PID`] (the synthetic rows
 /// [`analysis::compute_kernel_user_usage_bins`] emits) to two fixed,
 /// meaningful colours instead of hashing them like a real pid.
+/// Legend / tooltip name for a Per-Process group: `kernel`, `comm (pid N)`
+/// for a single pid, or `comm (N pids)`.
+fn process_label(p: &analysis::ProcessUsageInfo) -> String {
+    if p.pid == analysis::KERNEL_PSEUDO_PID {
+        p.comm.clone()
+    } else if p.pid_count > 1 {
+        format!("{} ({} pids)", p.comm, p.pid_count)
+    } else if p.comm.is_empty() || p.comm == format!("pid {}", p.pid) {
+        format!("pid {}", p.pid)
+    } else {
+        format!("{} (pid {})", p.comm, p.pid)
+    }
+}
+
 pub fn per_pid_color(pid: u32) -> Color32 {
     if pid == analysis::KERNEL_PSEUDO_PID {
         return Color32::from_rgb(210, 130, 90);
@@ -2190,9 +2205,10 @@ pub fn per_cpu_color(cpu_id: u16) -> Color32 {
 mod tests {
     use super::*;
     use crate::elog_parser::{
-        CpuStackSample, KernelInfo, CPU_SAMPLE_FLAG_FREQ_VALID, CPU_SAMPLE_FLAG_IDLE,
+        CpuStackSample, KernelInfo, ThreadInfo, CPU_SAMPLE_FLAG_FREQ_VALID, CPU_SAMPLE_FLAG_IDLE,
         CPU_SAMPLE_FLAG_USER_MODE,
     };
+    use rustc_hash::FxHashMap;
 
     fn cpu_panel() -> CpuUsagePanel {
         let mut samples = Vec::new();
@@ -2307,8 +2323,9 @@ mod tests {
     }
 
     #[test]
-    fn cursor_series_reranks_top_n_at_the_cursor() {
-        // pid 1 leads the capture; pid 2 only runs, on two CPUs, at the end.
+    fn per_process_joins_pids_and_reranks_at_the_cursor() {
+        // pid 1 leads the capture. nginx (pids 2 and 3) only runs at the
+        // end, so it lands in Other but outranks pid 1 there.
         let mut samples = Vec::new();
         for i in 0..1_000u64 {
             let mut push = |cpu: u16, pid: u32| {
@@ -2318,7 +2335,7 @@ mod tests {
                     pid,
                     tid: pid,
                     sample_type: 1,
-                    flags: 0,
+                    flags: CPU_SAMPLE_FLAG_USER_MODE,
                     freq_mhz: None,
                     frames: Vec::new(),
                 })
@@ -2326,11 +2343,24 @@ mod tests {
             push(0, 1);
             if i >= 800 {
                 push(1, 2);
-                push(2, 2);
+                push(2, 3);
             }
+        }
+        let mut threads = FxHashMap::default();
+        for pid in [2, 3] {
+            threads.insert(
+                pid,
+                ThreadInfo {
+                    tid: pid,
+                    pid,
+                    comm: "nginx".to_string(),
+                    tdname: String::new(),
+                },
+            );
         }
         let profile = Arc::new(CpuProfile {
             samples,
+            threads,
             kernel: Some(KernelInfo {
                 hz: 1_000,
                 ..Default::default()
@@ -2348,24 +2378,28 @@ mod tests {
         assert_eq!(bins.processes[0].pid, 1);
         let mut strip = TopProcessesStripView::new(bins, profile.clone(), 20, 1, None);
         strip.last_strip_data_lo_s = Some(0.0);
-        let labels: Vec<String> = strip
-            .cursor_series(0.975)
-            .into_iter()
-            .map(|(l, _, _)| l)
-            .collect();
+        let labels = |x: f64| -> Vec<String> {
+            strip
+                .cursor_series(x)
+                .into_iter()
+                .map(|(l, _, _)| l)
+                .collect()
+        };
         assert_eq!(
-            labels,
+            labels(0.975),
             [
-                "pid 2: 2.0 CPUs busy",
+                "nginx (2 pids): 2.0 CPUs busy",
                 "Other: 1.0 CPUs busy",
                 "Total: 3.0 CPUs busy"
             ]
         );
-        let early: Vec<String> = strip
-            .cursor_series(0.1)
-            .into_iter()
-            .map(|(l, _, _)| l)
-            .collect();
-        assert_eq!(early, ["pid 1: 1.0 CPUs busy", "Total: 1.0 CPUs busy"]);
+        assert_eq!(
+            labels(0.1),
+            ["pid 1: 1.0 CPUs busy", "Total: 1.0 CPUs busy"]
+        );
+
+        let bins = analysis::compute_process_usage_bins(&profile.samples, &profile, &grid, 2);
+        assert_eq!(process_label(&bins.processes[1]), "nginx (2 pids)");
+        assert_eq!(bins.processes[1].total_samples, 400);
     }
 }
