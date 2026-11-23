@@ -1612,13 +1612,15 @@ impl TopProcessesStripView {
     }
 
     /// Per-process cursor readout at `data_x_s` (host-relative seconds):
-    /// one `(label, color, cumulative_y)` per top process (plus "Other")
-    /// whose contribution is non-negligible at this instant, plus a
-    /// Total row for the full stack (including skipped tiny layers).
-    /// carries the process's *individual* value ("comm (pid N): X% busy");
-    /// `cumulative_y` is the running stacked total through that layer, so
-    /// the host can place the tracking dot on the layer's top edge — the
-    /// same place the stacked area draws it. Empty when out of range.
+    /// one `(label, color, cumulative_y)` per process, plus "Other" and a
+    /// Total row for the full stack. Per-Process mode re-ranks the top N
+    /// at this bin, so a pid folded into the Other band can outrank a
+    /// stacked layer; rows are then sorted by value. Each label carries
+    /// the process's *individual* value ("comm (pid N): X% busy");
+    /// `cumulative_y` is the stacked total through that layer, so the host
+    /// places the tracking dot on the layer's top edge. Pids drawn inside
+    /// the Other band get a NaN `cumulative_y`, which hosts skip as
+    /// off-plot. Empty when out of range.
     pub(crate) fn cursor_series(&self, data_x_s: f64) -> Vec<(String, Color32, f64)> {
         let mut out = Vec::new();
         let Some(strip_data_lo_s) = self.last_strip_data_lo_s else {
@@ -1648,33 +1650,61 @@ impl TopProcessesStripView {
                 format!("{name}: {v:.1} CPUs busy")
             }
         };
+        let label = |pid: u32, comm: &str| -> String {
+            if self.is_kernel_user {
+                comm.to_string()
+            } else if comm.is_empty() {
+                format!("pid {pid}")
+            } else {
+                format!("{comm} (pid {pid})")
+            }
+        };
+        let freq = if self.scale_by_freq {
+            bins.freq_scale_for(bin) as f64
+        } else {
+            1.0
+        };
+        // (pid, label, value, cumulative_y)
+        let mut rows: Vec<(u32, String, f64, f64)> = Vec::new();
         let mut cum = 0.0_f64;
         for (i, p) in bins.processes.iter().enumerate() {
             let indiv = self.scaled_cpus_busy_by_pid(bins, bin, i) * scale;
             cum += indiv;
-            if indiv < 0.05 {
+            rows.push((p.pid, label(p.pid, &p.comm), indiv, cum));
+        }
+        cum += self.scaled_cpus_busy_other(bins, bin) * scale;
+        let total = cum;
+        for &(pid, count) in bins.other_top_at(bin) {
+            let comm = bins.other_comm.get(&pid).map_or("", |c| c.as_str());
+            let v = bins.cpus_busy_count(bin, count) * freq * scale;
+            rows.push((pid, label(pid, comm), v, f64::NAN));
+        }
+        if !self.is_kernel_user {
+            rows.sort_by(|a, b| b.2.total_cmp(&a.2).then(a.0.cmp(&b.0)));
+            rows.truncate(self.top_n);
+        }
+        let mut shown = 0.0_f64;
+        for (pid, name, v, y) in rows {
+            if v < 0.05 {
                 continue;
             }
-            let name = if self.is_kernel_user {
-                p.comm.clone()
-            } else if p.comm.is_empty() {
-                format!("pid {}", p.pid)
-            } else {
-                format!("{} (pid {})", p.comm, p.pid)
-            };
-            out.push((fmt(name, indiv), per_pid_color(p.pid), cum));
+            shown += v;
+            out.push((fmt(name, v), per_pid_color(pid), y));
         }
-        let other = self.scaled_cpus_busy_other(bins, bin) * scale;
-        cum += other;
+        let other = total - shown;
         if other >= 0.05 {
             out.push((
                 fmt("Other".to_string(), other),
                 Color32::from_rgb(150, 150, 160),
-                cum,
+                total,
             ));
         }
-        if cum >= 0.05 {
-            out.push((fmt("Total".to_string(), cum), Color32::from_gray(200), cum));
+        if total >= 0.05 {
+            out.push((
+                fmt("Total".to_string(), total),
+                Color32::from_gray(200),
+                total,
+            ));
         }
         out
     }
@@ -2274,5 +2304,68 @@ mod tests {
             panel.cpu_strip.bins.cpus_busy(1) * panel.cpu_strip.y_scale(),
             60.0
         );
+    }
+
+    #[test]
+    fn cursor_series_reranks_top_n_at_the_cursor() {
+        // pid 1 leads the capture; pid 2 only runs, on two CPUs, at the end.
+        let mut samples = Vec::new();
+        for i in 0..1_000u64 {
+            let mut push = |cpu: u16, pid: u32| {
+                samples.push(CpuStackSample {
+                    ts: 1_000_000 + i * 1_000,
+                    cpu,
+                    pid,
+                    tid: pid,
+                    sample_type: 1,
+                    flags: 0,
+                    freq_mhz: None,
+                    frames: Vec::new(),
+                })
+            };
+            push(0, 1);
+            if i >= 800 {
+                push(1, 2);
+                push(2, 2);
+            }
+        }
+        let profile = Arc::new(CpuProfile {
+            samples,
+            kernel: Some(KernelInfo {
+                hz: 1_000,
+                ..Default::default()
+            }),
+            ..Default::default()
+        });
+        let grid = analysis::compute_cpu_usage_bins_for_cpus(
+            &profile.samples,
+            20,
+            &profile.rate_timeline(),
+            None,
+            &[],
+        );
+        let bins = analysis::compute_process_usage_bins(&profile.samples, &profile, &grid, 1);
+        assert_eq!(bins.processes[0].pid, 1);
+        let mut strip = TopProcessesStripView::new(bins, profile.clone(), 20, 1, None);
+        strip.last_strip_data_lo_s = Some(0.0);
+        let labels: Vec<String> = strip
+            .cursor_series(0.975)
+            .into_iter()
+            .map(|(l, _, _)| l)
+            .collect();
+        assert_eq!(
+            labels,
+            [
+                "pid 2: 2.0 CPUs busy",
+                "Other: 1.0 CPUs busy",
+                "Total: 3.0 CPUs busy"
+            ]
+        );
+        let early: Vec<String> = strip
+            .cursor_series(0.1)
+            .into_iter()
+            .map(|(l, _, _)| l)
+            .collect();
+        assert_eq!(early, ["pid 1: 1.0 CPUs busy", "Total: 1.0 CPUs busy"]);
     }
 }

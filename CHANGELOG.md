@@ -48,6 +48,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Network TX drops/s: the line uses the Time buckets setting like the
   other plots, and its axis labels are whole numbers. The line and its
   axis are purple, apart from the UDP band's orange.
+- CPU Usage Per-Process tooltip re-ranks the top N at the cursor, so a
+  process folded into Other shows by name when it outranks a stacked
+  one. Rows are sorted by value; Other holds the rest.
 
 ### Fixed
 

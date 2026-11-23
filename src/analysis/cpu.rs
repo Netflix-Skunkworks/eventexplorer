@@ -544,6 +544,12 @@ pub struct ProcessUsageBins {
     /// always represents 100 % of samples without growing
     /// unboundedly with pid count.
     pub other_per_bin: Vec<u32>,
+    /// Per bin, the largest `(pid, count)` entries folded into
+    /// [`Self::other_per_bin`] (up to top-N, descending), so the cursor
+    /// readout can rank processes at that instant.
+    pub other_top_per_bin: Vec<Vec<(u32, u32)>>,
+    /// `comm` for every pid in [`Self::other_top_per_bin`].
+    pub other_comm: FxHashMap<u32, String>,
     /// Same `peak_samples_per_bin` as the matching `CpuUsageBins`.
     /// Used as the denominator when converting raw counts to
     /// "CPUs busy" so the strip's y-axis matches the CPUs-busy
@@ -606,6 +612,23 @@ impl ProcessUsageBins {
             return 0.0;
         }
         self.other_per_bin[bin] as f64 / denom
+    }
+
+    /// "CPUs busy" for `count` samples in `bin`, on the same scale as
+    /// [`Self::cpus_busy_by_pid`].
+    pub fn cpus_busy_count(&self, bin: usize, count: u32) -> f64 {
+        let denom = bin_peak(&self.peak_per_bin, self.peak_samples_per_bin, bin);
+        if denom <= 0.0 || bin >= self.bin_count {
+            return 0.0;
+        }
+        count as f64 / denom
+    }
+
+    /// Largest "Other" pids in `bin` as `(pid, count)`, descending.
+    pub fn other_top_at(&self, bin: usize) -> &[(u32, u32)] {
+        self.other_top_per_bin
+            .get(bin)
+            .map_or(&[], |v| v.as_slice())
     }
 
     /// Frequency-scaling multiplier for `bin` (see
@@ -676,6 +699,7 @@ pub fn compute_process_usage_bins(
     let mut counts_per_bin: Vec<Vec<u32>> =
         (0..kept_n).map(|_| vec![0u32; grid.bin_count]).collect();
     let mut other_per_bin = vec![0u32; grid.bin_count];
+    let mut other_counts: FxHashMap<(usize, u32), u32> = FxHashMap::default();
     for s in samples {
         if (s.flags & CPU_SAMPLE_FLAG_IDLE) != 0 || !selected[s.cpu as usize] {
             continue;
@@ -684,7 +708,27 @@ pub fn compute_process_usage_bins(
         let bin = ((off_us / grid.bin_us) as usize).min(grid.bin_count - 1);
         match pid_idx.get(&s.pid) {
             Some(&idx) => counts_per_bin[idx][bin] += 1,
-            None => other_per_bin[bin] += 1,
+            None => {
+                other_per_bin[bin] += 1;
+                *other_counts.entry((bin, s.pid)).or_insert(0) += 1;
+            }
+        }
+    }
+    let mut other_top_per_bin: Vec<Vec<(u32, u32)>> = vec![Vec::new(); grid.bin_count];
+    for ((bin, pid), count) in other_counts {
+        other_top_per_bin[bin].push((pid, count));
+    }
+    let mut other_comm: FxHashMap<u32, String> = FxHashMap::default();
+    for top in &mut other_top_per_bin {
+        top.sort_unstable_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+        top.truncate(top_n);
+        for &(pid, _) in top.iter() {
+            other_comm.entry(pid).or_insert_with(|| {
+                profile
+                    .process_comm_latest(pid)
+                    .map(str::to_string)
+                    .unwrap_or_default()
+            });
         }
     }
 
@@ -716,6 +760,8 @@ pub fn compute_process_usage_bins(
         bin_count: grid.bin_count,
         processes,
         other_per_bin,
+        other_top_per_bin,
+        other_comm,
         peak_samples_per_bin: grid.peak_samples_per_bin,
         peak_per_bin: grid.peak_per_bin.clone(),
         freq_scale: grid.freq_scale.clone(),
@@ -791,6 +837,8 @@ pub fn compute_kernel_user_usage_bins(
             },
         ],
         other_per_bin: vec![0u32; grid.bin_count],
+        other_top_per_bin: Vec::new(),
+        other_comm: FxHashMap::default(),
         peak_samples_per_bin: grid.peak_samples_per_bin,
         peak_per_bin: grid.peak_per_bin.clone(),
         freq_scale: grid.freq_scale.clone(),
