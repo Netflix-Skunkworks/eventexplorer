@@ -423,7 +423,7 @@ pub enum CpuStripMode {
     Aggregate,
     /// One stacked area per CPU, colour-coded by CPU id.
     PerCpu,
-    /// Stacked top-N processes by on-CPU time, plus an "Other" cap
+    /// Stacked top-N processes by on-CPU time, plus an "Other" band
     /// for the long tail.
     PerProcess,
     /// Stacked kernel-mode vs. user-mode busy time
@@ -462,7 +462,7 @@ impl CpuStripMode {
             }
             Self::PerProcess => {
                 "Stacked top-N processes by on-CPU time, plus an \"Other\" \
-                 cap for the long tail."
+                 band for the long tail."
             }
             Self::KernelUser => "Stacked kernel-mode vs. user-mode busy time.",
         }
@@ -518,7 +518,8 @@ impl CpuUsagePanel {
         }
         // First paint uses the default bucket count. `sync_bins`
         // replaces these bins when the gear slider differs.
-        const TOP_PROCESSES_N: usize = 10;
+        const TOP_PROCESSES_N: usize = 4;
+        const TOOLTIP_PROCESSES_N: usize = 10;
 
         let rates = &profile.rate_timeline();
         let rated = profile.kernel.as_ref().and_then(|k| k.rated_freq_mhz());
@@ -534,6 +535,7 @@ impl CpuUsagePanel {
             &process_groups,
             &cpu_bins,
             TOP_PROCESSES_N,
+            TOOLTIP_PROCESSES_N,
         );
         let kernel_user_bins =
             analysis::compute_kernel_user_usage_bins(&profile.samples, &cpu_bins);
@@ -553,6 +555,7 @@ impl CpuUsagePanel {
             reference_freq_mhz,
         );
         process_strip.process_groups = process_groups;
+        process_strip.tooltip_n = TOOLTIP_PROCESSES_N;
         process_strip.plot_height = style.plot_height;
         process_strip.x_axis_title = style.x_axis_title.clone();
         process_strip.as_percent = true;
@@ -619,6 +622,7 @@ impl CpuUsagePanel {
             &self.process_strip.process_groups,
             &cpu_bins,
             top_n,
+            self.process_strip.tooltip_n,
         );
         let kernel_user_bins =
             analysis::compute_kernel_user_usage_bins(&profile.samples, &cpu_bins);
@@ -1423,6 +1427,8 @@ pub struct TopProcessesStripView {
     pub(crate) target_bins: usize,
     /// Top-N kept when re-binning Per-Process.
     pub(crate) top_n: usize,
+    /// Rows in the cursor readout, re-ranked at the cursor.
+    pub(crate) tooltip_n: usize,
     /// Pid → group label, built once per profile and reused by re-bins.
     pub(crate) process_groups: Arc<analysis::ProcessGroups>,
     /// Full-capture frequency reference, applied to zoomed grids so
@@ -1492,6 +1498,7 @@ impl TopProcessesStripView {
             profile,
             target_bins,
             top_n,
+            tooltip_n: top_n,
             process_groups: Arc::default(),
             cpus: Vec::new(),
             reference_freq_mhz,
@@ -1575,6 +1582,7 @@ impl TopProcessesStripView {
                     &self.process_groups,
                     &grid,
                     self.top_n,
+                    self.tooltip_n,
                 )
             };
             self.zoom_cache = Some(((lo_us, hi_us), rebinned));
@@ -1674,12 +1682,16 @@ impl TopProcessesStripView {
         // (pid, label, value, cumulative_y)
         let mut rows: Vec<(u32, String, f64, f64)> = Vec::new();
         let mut cum = 0.0_f64;
-        for (i, p) in bins.processes.iter().enumerate() {
+        for layer in stack_layers(bins.processes.len(), self.is_kernel_user) {
+            let Some(i) = layer else {
+                cum += self.scaled_cpus_busy_other(bins, bin) * scale;
+                continue;
+            };
+            let p = &bins.processes[i];
             let indiv = self.scaled_cpus_busy_by_pid(bins, bin, i) * scale;
             cum += indiv;
             rows.push((p.pid, label(p), indiv, cum));
         }
-        cum += self.scaled_cpus_busy_other(bins, bin) * scale;
         let total = cum;
         for &(g, count) in bins.other_top_at(bin) {
             let p = &bins.other_groups[g as usize];
@@ -1688,7 +1700,7 @@ impl TopProcessesStripView {
         }
         if !self.is_kernel_user {
             rows.sort_by(|a, b| b.2.total_cmp(&a.2).then(a.0.cmp(&b.0)));
-            rows.truncate(self.top_n);
+            rows.truncate(self.tooltip_n);
         }
         let mut shown = 0.0_f64;
         for (pid, name, v, y) in rows {
@@ -1916,11 +1928,8 @@ impl TopProcessesStripView {
                 [view_hi_s, y_max_nice],
             ));
 
-            // Stack order: largest pid at the bottom, "Other"
-            // overlay sits on top of the per-pid stack so the
-            // reader sees the dominant pid first and the long tail
-            // as a single grey cap. The cumulative line at index N
-            // is the sum of layers 0..=N for each bin.
+            // Stack order comes from `stack_layers`. Each line is the
+            // cumulative sum of the layers drawn so far.
             let n = bins.processes.len();
             let mut cum = vec![0.0f64; bins.bin_count];
             if is_kernel_user && n == 2 {
@@ -1956,41 +1965,37 @@ impl TopProcessesStripView {
                         .name(bins.processes[1].comm.clone()),
                 );
             } else {
-                // Per-pid stacked layers.
-                for i in 0..n {
+                // Per-process stacked lines, bottom to top: Other, then
+                // the smallest group up to the largest, so the top line is
+                // the total.
+                for layer in stack_layers(n, false) {
                     let mut pts: Vec<[f64; 2]> = Vec::with_capacity(bins.bin_count);
                     for (bin, c) in cum.iter_mut().enumerate() {
-                        *c += scaled_by_pid(bin, i) * scale;
+                        *c += match layer {
+                            Some(i) => scaled_by_pid(bin, i),
+                            None => scaled_other(bin),
+                        } * scale;
                         let t = strip_data_lo_s + bin as f64 * bin_s + bin_s * 0.5;
                         pts.push([t, *c]);
                     }
-                    let p = &bins.processes[i];
-                    plot_ui.line(
-                        Line::new(PlotPoints::new(pts))
-                            .color(per_pid_color(p.pid))
-                            .width(1.0_f32)
-                            .name(process_label(p)),
-                    );
+                    let line = match layer {
+                        Some(i) => {
+                            let p = &bins.processes[i];
+                            Line::new(PlotPoints::new(pts))
+                                .color(per_pid_color(p.pid))
+                                .width(1.0_f32)
+                                .name(process_label(p))
+                        }
+                        None if bins.other_per_bin.iter().any(|&v| v > 0) => {
+                            Line::new(PlotPoints::new(pts))
+                                .color(Color32::from_rgb(150, 150, 160))
+                                .width(0.8_f32)
+                                .name("Other")
+                        }
+                        None => continue,
+                    };
+                    plot_ui.line(line);
                 }
-            }
-            // "Other" cap layer if it carries any samples.
-            let mut other_total: u64 = 0;
-            for &v in &bins.other_per_bin {
-                other_total += v as u64;
-            }
-            if other_total > 0 {
-                let mut pts: Vec<[f64; 2]> = Vec::with_capacity(bins.bin_count);
-                for (bin, c) in cum.iter_mut().enumerate() {
-                    *c += scaled_other(bin) * scale;
-                    let t = strip_data_lo_s + bin as f64 * bin_s + bin_s * 0.5;
-                    pts.push([t, *c]);
-                }
-                plot_ui.line(
-                    Line::new(PlotPoints::new(pts))
-                        .color(Color32::from_rgb(150, 150, 160))
-                        .width(0.8_f32)
-                        .name("Other"),
-                );
             }
 
             if own_gestures {
@@ -2103,6 +2108,17 @@ impl TopProcessesStripView {
 /// [`analysis::USER_PSEUDO_PID`] (the synthetic rows
 /// [`analysis::compute_kernel_user_usage_bins`] emits) to two fixed,
 /// meaningful colours instead of hashing them like a real pid.
+/// Bottom-to-top stack order: `Some(i)` is `processes[i]`, `None` is
+/// Other. Per-Process puts Other at the bottom and the largest group on
+/// top; Kernel vs User keeps Kernel at the bottom.
+fn stack_layers(n: usize, is_kernel_user: bool) -> Vec<Option<usize>> {
+    if is_kernel_user {
+        (0..n).map(Some).chain([None]).collect()
+    } else {
+        [None].into_iter().chain((0..n).rev().map(Some)).collect()
+    }
+}
+
 /// Legend / tooltip name for a Per-Process group: `kernel`, `comm (pid N)`
 /// for a single pid, or `comm (N pids)`.
 fn process_label(p: &analysis::ProcessUsageInfo) -> String {
@@ -2401,5 +2417,21 @@ mod tests {
         let bins = analysis::compute_process_usage_bins(&profile.samples, &profile, &grid, 2);
         assert_eq!(process_label(&bins.processes[1]), "nginx (2 pids)");
         assert_eq!(bins.processes[1].total_samples, 400);
+        // Bottom to top: Other, nginx, then pid 1 as the top (total) line.
+        let mut strip = TopProcessesStripView::new(bins, profile.clone(), 20, 2, None);
+        strip.last_strip_data_lo_s = Some(0.0);
+        let ys: Vec<(String, f64)> = strip
+            .cursor_series(0.975)
+            .into_iter()
+            .map(|(l, _, y)| (l, y))
+            .collect();
+        assert_eq!(
+            ys,
+            [
+                ("nginx (2 pids): 2.0 CPUs busy".to_string(), 2.0),
+                ("pid 1: 1.0 CPUs busy".to_string(), 3.0),
+                ("Total: 3.0 CPUs busy".to_string(), 3.0)
+            ]
+        );
     }
 }

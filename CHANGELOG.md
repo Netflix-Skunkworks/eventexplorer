@@ -52,6 +52,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   bars and the Processes view do: one band per `comm` (all nginx workers
   are one "nginx: worker process (N pids)" band) and one `kernel` band
   for kernel threads.
+- CPU Usage Per-Process plots the top 4 groups plus Other (the tooltip
+  still ranks the top 10 at the cursor), stacked from Other at the
+  bottom up to the largest group on top.
 - CPU Usage Per-Process tooltip re-ranks the top N at the cursor, so a
   process folded into Other shows by name when it outranks a stacked
   one. Rows are sorted by value; Other holds the rest.

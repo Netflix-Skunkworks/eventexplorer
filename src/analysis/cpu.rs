@@ -545,7 +545,7 @@ pub struct ProcessUsageBins {
     /// unboundedly with pid count.
     pub other_per_bin: Vec<u32>,
     /// Per bin, the largest `(group, count)` entries folded into
-    /// [`Self::other_per_bin`] (up to top-N, descending), so the cursor
+    /// [`Self::other_per_bin`] (descending), so the cursor
     /// readout can rank processes at that instant. `group` indexes
     /// [`Self::other_groups`].
     pub other_top_per_bin: Vec<Vec<(u32, u32)>>,
@@ -673,7 +673,7 @@ pub fn compute_process_usage_bins(
     grid: &CpuUsageBins,
     top_n: usize,
 ) -> ProcessUsageBins {
-    compute_process_usage_bins_grouped(samples, &ProcessGroups::new(profile), grid, top_n)
+    compute_process_usage_bins_grouped(samples, &ProcessGroups::new(profile), grid, top_n, top_n)
 }
 
 /// Group label per pid, as the flame's **Group by process** bars
@@ -708,11 +708,13 @@ impl ProcessGroups {
 }
 
 /// [`compute_process_usage_bins`] with a prebuilt [`ProcessGroups`].
+/// `other_top_n` caps [`ProcessUsageBins::other_top_per_bin`] per bin.
 pub fn compute_process_usage_bins_grouped(
     samples: &[CpuStackSample],
     process_groups: &ProcessGroups,
     grid: &CpuUsageBins,
     top_n: usize,
+    other_top_n: usize,
 ) -> ProcessUsageBins {
     if samples.is_empty() || grid.is_empty() || top_n == 0 {
         return ProcessUsageBins::default();
@@ -817,7 +819,7 @@ pub fn compute_process_usage_bins_grouped(
             b.1.cmp(&a.1)
                 .then_with(|| groups[a.0 as usize].label.cmp(&groups[b.0 as usize].label))
         });
-        top.truncate(top_n);
+        top.truncate(other_top_n);
         for entry in top.iter_mut() {
             entry.0 = *other_idx.entry(entry.0).or_insert_with(|| {
                 other_groups.push(info(&groups[entry.0 as usize], Vec::new()));
