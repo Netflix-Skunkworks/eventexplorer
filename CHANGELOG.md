@@ -10,8 +10,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Flame gear **Show idle**: an `[idle]` bar on the bottom row sized to
   sampler capacity minus busy samples for the window and selected CPUs, so
-  bar widths read as a share of all CPU time. Idle-loop samples count in
-  `[idle]` rather than under `kernel → idle`.
+  bar widths read as a share of all CPU time.
+- The GUI flame graph leaves out idle-loop samples
+  (`fork_exit → sched_idletd → cpu_idle`) whether or not Show idle is on;
+  `[idle]` is the only place idle time shows. Interrupt work on idle CPUs
+  stays under `kernel → idle`.
 - The flame graph follows the CPU plot's **Scale by CPU frequency**: each
   sample weighs `freq_mhz / reference` (capped at 1), so with Show idle on
   the busy share matches the scaled plot.

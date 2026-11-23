@@ -413,11 +413,12 @@ impl FlameViewState {
         self.install_tree(tree);
     }
 
-    /// [`Self::filter`] plus the `[idle]` and frequency settings for a
-    /// single-capture tree.
+    /// [`Self::filter`] for a single-capture tree: idle-loop samples
+    /// dropped (they are idle time, shown only by `[idle]`) and the
+    /// frequency weighting applied.
     pub(crate) fn tree_filter(&self) -> FlameFilter {
         FlameFilter {
-            skip_idle: self.show_idle,
+            skip_idle: true,
             freq_ref_mhz: self.freq_ref_mhz,
             ..self.filter.clone()
         }
@@ -434,10 +435,14 @@ impl FlameViewState {
         let base_window = (compare.base_ts_start_us, compare.base_ts_end_us);
         let target_window = (self.filter.ts_start_us, self.filter.ts_end_us);
         let (group_by_process, kernel_user_base, kernel_group) = self.organize.flags();
+        let filter = FlameFilter {
+            skip_idle: true,
+            ..self.filter.clone()
+        };
         let diff = analysis::build_flame_diff(
             &compare.baseline,
             profile,
-            &self.filter,
+            &filter,
             base_window,
             target_window,
             group_by_process,
@@ -1004,8 +1009,8 @@ pub fn show_flame_gear_menu(
                         .checkbox(&mut flame.show_idle, RichText::new("Show idle").size(12.0))
                         .on_hover_text(
                             "Add an `[idle]` bar to the bottom row: sampler capacity for \
-                             the time window and selected CPUs, minus every sample taken \
-                             there. Bar widths then read as a share of all CPU time. \
+                             the time window and selected CPUs, minus every busy sample \
+                             taken there. Bar widths then read as a share of all CPU time. \
                              Process and stack filters don't shrink it.",
                         )
                         .changed()
@@ -2112,7 +2117,10 @@ impl EventExplorerApp {
             .as_ref()
             .map_or((0, u64::MAX), |c| (c.base_ts_start_us, c.base_ts_end_us));
         let filter = if baseline.is_some() {
-            flame.filter.clone()
+            FlameFilter {
+                skip_idle: true,
+                ..flame.filter.clone()
+            }
         } else {
             flame.tree_filter()
         };
