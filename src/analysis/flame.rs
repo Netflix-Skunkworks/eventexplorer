@@ -27,12 +27,10 @@ use std::collections::HashMap;
 /// sample-time process name ([`CpuProfile::process_comm_at`]) and
 /// `ThreadInfo.tdname` (case-sensitive prefix match).
 ///
-/// `CPU_SAMPLE_FLAG_IDLE` / `CPU_SAMPLE_FLAG_TRUNC` are *not* filter
-/// knobs here. Current kernels (post May 2026) no longer emit idle
-/// samples at all — the statclock tail hook returns early for
-/// `TDF_IDLETD` threads — so nothing to filter out for fresh captures.
-/// Older captures with empty-stack idle samples show up as samples on
-/// the synthetic root (rendered as a single `IDLE` line in folded
+/// `CPU_SAMPLE_FLAG_IDLE` samples (the idle loop; see
+/// `CpuProfile::reclassify_idle_interrupts`) are dropped only with
+/// [`Self::skip_idle`]. Empty-stack idle samples from older captures
+/// show up on the synthetic root (a single `IDLE` line in folded
 /// output). `CPU_SAMPLE_FLAG_TRUNC` samples are rare in practice (≤ 14
 /// out of 400 k on a 4 kHz live-traffic capture — 0.003 %) and not worth
 /// a dedicated filter — they're included unconditionally and their
@@ -64,7 +62,17 @@ pub struct FlameFilter {
     /// Drop samples whose stack hits any of these selectors (wins
     /// over `include_stacks`). GUI: ALT+click a flame bar.
     pub exclude_stacks: Vec<StackSelector>,
+    /// Drop [`CPU_SAMPLE_FLAG_IDLE`] samples. Set with [`add_idle_base`],
+    /// whose `[idle]` bar counts them.
+    pub skip_idle: bool,
+    /// Weight each sample by `freq_mhz / freq_ref_mhz` (capped at 1) in
+    /// units of [`FREQ_WEIGHT_UNIT`], matching the CPU plot's "Scale by
+    /// CPU frequency". `None` counts one per sample.
+    pub freq_ref_mhz: Option<u16>,
 }
+
+/// Count of one full-speed sample in a frequency-weighted tree.
+pub const FREQ_WEIGHT_UNIT: u64 = 1000;
 
 /// One stack-filter term for [`FlameFilter::include_stacks`] /
 /// [`FlameFilter::exclude_stacks`]. A sample "hits" a selector when
@@ -110,11 +118,39 @@ impl FlameFilter {
             ts_end_us: u64::MAX,
             include_stacks: Vec::new(),
             exclude_stacks: Vec::new(),
+            skip_idle: false,
+            freq_ref_mhz: None,
+        }
+    }
+
+    /// Tree count of one full-speed sample under this filter.
+    pub fn count_unit(&self) -> u64 {
+        if self.freq_ref_mhz.is_some() {
+            FREQ_WEIGHT_UNIT
+        } else {
+            1
+        }
+    }
+
+    /// Tree count contributed by `s`; see [`Self::freq_ref_mhz`].
+    pub fn sample_weight(&self, s: &CpuStackSample) -> u64 {
+        let Some(reference) = self.freq_ref_mhz.filter(|&r| r > 0) else {
+            return 1;
+        };
+        match s.freq_mhz {
+            Some(f) if (s.flags & CPU_SAMPLE_FLAG_FREQ_VALID) != 0 => {
+                let w = (f as f64 / reference as f64).min(1.0);
+                (w * FREQ_WEIGHT_UNIT as f64).round() as u64
+            }
+            _ => FREQ_WEIGHT_UNIT,
         }
     }
 
     pub(crate) fn matches(&self, s: &CpuStackSample, profile: &CpuProfile) -> bool {
         if s.ts < self.ts_start_us || s.ts > self.ts_end_us {
+            return false;
+        }
+        if self.skip_idle && (s.flags & CPU_SAMPLE_FLAG_IDLE) != 0 {
             return false;
         }
         if !self.cpus.is_empty() && !self.cpus.contains(&s.cpu) {
@@ -358,10 +394,11 @@ pub const USER_GROUP_LABEL: &str = "user";
 pub const IDLE_GROUP_LABEL: &str = "[idle]";
 
 /// Add an [`IDLE_GROUP_LABEL`] bar under `tree`'s root sized to the
-/// sampler capacity of `filter`'s window and CPUs minus every sample
-/// taken there. The pid, comm and stack filters don't shrink it, so
-/// the bar is the box's idle time. Bar widths then read as a share
-/// of all CPU time.
+/// sampler capacity of `filter`'s window and CPUs minus every busy
+/// sample taken there, weighted as `filter` weights the tree. The pid,
+/// comm and stack filters don't shrink it, so the bar is the box's idle
+/// time. Bar widths then read as a share of all CPU time. Build `tree`
+/// with [`FlameFilter::skip_idle`] so idle-loop samples count only here.
 pub fn add_idle_base(tree: &mut FlameNode, profile: &CpuProfile, filter: &FlameFilter) {
     let capacity = super::cpu_sample_capacity(profile, filter.ts_start_us, filter.ts_end_us);
     if capacity <= 0.0 {
@@ -373,13 +410,15 @@ pub fn add_idle_base(tree: &mut FlameNode, profile: &CpuProfile, filter: &FlameF
     } else {
         capacity * filter.cpus.len().min(ncpu) as f64 / ncpu as f64
     };
-    let busy = profile
+    let busy: u64 = profile
         .samples
         .iter()
         .filter(|s| s.ts >= filter.ts_start_us && s.ts <= filter.ts_end_us)
         .filter(|s| filter.cpus.is_empty() || filter.cpus.contains(&s.cpu))
-        .count() as f64;
-    let idle = (capacity - busy).round();
+        .filter(|s| (s.flags & CPU_SAMPLE_FLAG_IDLE) == 0)
+        .map(|s| filter.sample_weight(s))
+        .sum();
+    let idle = (capacity * filter.count_unit() as f64 - busy as f64).round();
     if idle < 1.0 {
         return;
     }
@@ -899,7 +938,8 @@ pub fn build_flame_tree_filtered(
         {
             continue;
         }
-        root.total_count += 1;
+        let w = filter.sample_weight(s);
+        root.total_count += w;
         // Optional process / kernel bar sits between the synthetic
         // root and the first real frame. Empty-stack samples become
         // self-time on that bar (or on the root when grouping is off).
@@ -914,13 +954,13 @@ pub fn build_flame_tree_filtered(
                 (USER_GROUP_LABEL, super::USER_PSEUDO_PID)
             };
             let mode = root.group_child_mut(mode_label, mode_pid);
-            mode.total_count += 1;
+            mode.total_count += w;
             if group_by_process {
                 if is_kernel {
-                    kernel_thread_child(mode, s, &profile.threads)
+                    kernel_thread_child(mode, s, &profile.threads, w)
                 } else {
                     let group = mode.group_child_mut(&label, owner);
-                    group.total_count += 1;
+                    group.total_count += w;
                     group
                 }
             } else {
@@ -937,9 +977,9 @@ pub fn build_flame_tree_filtered(
                     profile.sample_owner_pid(s.tid, s.pid, s.ts, &s.frames)
                 };
                 let group = root.group_child_mut(&label, group_pid);
-                group.total_count += 1;
+                group.total_count += w;
                 if label == KERNEL_GROUP_LABEL {
-                    kernel_thread_child(group, s, &profile.threads)
+                    kernel_thread_child(group, s, &profile.threads, w)
                 } else {
                     group
                 }
@@ -948,13 +988,13 @@ pub fn build_flame_tree_filtered(
             &mut root
         };
         if s.frames.is_empty() {
-            node.self_count += 1;
+            node.self_count += w;
             continue;
         }
         let nframes = s.frames.len();
         for (i, &(key, key_pid, overlay_pc)) in frame_keys.iter().enumerate() {
             node = node.child_mut(key, key_pid);
-            node.total_count += 1;
+            node.total_count += w;
             if i == nframes - 1 {
                 // Leaf frame. In ByPc / BySymbol-without-overlay we
                 // bump self_count directly. In BySymbol-with-overlay
@@ -967,10 +1007,10 @@ pub fn build_flame_tree_filtered(
                 // the same pid-scoped path as the parent.
                 if with_overlay && key != overlay_pc {
                     let overlay = node.self_pc_child_mut(overlay_pc, key_pid);
-                    overlay.total_count += 1;
-                    overlay.self_count += 1;
+                    overlay.total_count += w;
+                    overlay.self_count += w;
                 } else {
-                    node.self_count += 1;
+                    node.self_count += w;
                 }
             }
         }
@@ -1488,6 +1528,7 @@ fn kernel_thread_child<'a>(
     group: &'a mut FlameNode,
     sample: &CpuStackSample,
     threads: &FxHashMap<u32, ThreadInfo>,
+    weight: u64,
 ) -> &'a mut FlameNode {
     let tlabel = thread_name_for_sample(sample, threads);
     if tlabel == KERNEL_GROUP_LABEL {
@@ -1495,7 +1536,7 @@ fn kernel_thread_child<'a>(
     }
     let tpid = flame_thread_group_pid(&tlabel);
     let thread = group.group_child_mut(&tlabel, tpid);
-    thread.total_count += 1;
+    thread.total_count += weight;
     thread
 }
 
@@ -1679,6 +1720,46 @@ mod tests {
             flame_group_bar_label(&profile, crate::analysis::IDLE_PSEUDO_PID),
             IDLE_GROUP_LABEL
         );
+    }
+
+    #[test]
+    fn idle_base_weights_by_frequency_and_absorbs_idle_samples() {
+        let mut slow = sample_at(
+            1_000_000,
+            100,
+            100,
+            CPU_SAMPLE_FLAG_FREQ_VALID,
+            vec![0x1000],
+        );
+        slow.freq_mhz = Some(1250);
+        let mut fast = sample_at(
+            1_500_000,
+            100,
+            100,
+            CPU_SAMPLE_FLAG_FREQ_VALID,
+            vec![0x1000],
+        );
+        fast.freq_mhz = Some(3000);
+        let idle = sample_at(2_000_000, 0, 1, CPU_SAMPLE_FLAG_IDLE, vec![0x2000]);
+        let profile = CpuProfile {
+            samples: vec![slow, fast, idle],
+            sample_rates: vec![SampleRateSegment {
+                start_us: 0,
+                hz: 100,
+                detected: true,
+            }],
+            ..CpuProfile::default()
+        };
+        let filter = FlameFilter {
+            skip_idle: true,
+            freq_ref_mhz: Some(2500),
+            ..FlameFilter::default()
+        };
+        let mut tree = build_flame_tree(&profile, &filter, FlameAggregation::ByPc, true, true);
+        assert_eq!(tree.total_count, 500 + 1000);
+        add_idle_base(&mut tree, &profile, &filter);
+        // 100 Hz over 1 s on one CPU = 100 samples of capacity.
+        assert_eq!(tree.total_count, 100 * FREQ_WEIGHT_UNIT);
     }
 
     fn sample(pid: u32, tid: u32, flags: u8, frames: Vec<u64>) -> CpuStackSample {
@@ -2599,6 +2680,63 @@ mod tests {
         let diff = diff_full(&base, &target, &f, true);
         assert_eq!(diff.base_total, 1);
         assert_eq!(diff.target_total, 1);
+    }
+
+    #[test]
+    fn idle_thread_interrupt_stacks_are_busy() {
+        let base = 0xffff_ffff_8000_0000u64;
+        let idle = |flags: u8, root: u64| {
+            sample_at(
+                1,
+                0,
+                1,
+                CPU_SAMPLE_FLAG_IDLE | flags,
+                vec![base + 0x3000, root],
+            )
+        };
+        let mut p = profile(
+            vec![
+                idle(0, base + 0x1010),
+                idle(0, base + 0x2010),
+                idle(CPU_SAMPLE_FLAG_INTR, base + 0x1010),
+                idle(0, 0x10),
+            ],
+            vec![thread(1, 0, "idle")],
+        );
+        p.linker_files.insert(
+            1,
+            LinkerFile {
+                file_id: 1,
+                base,
+                size: 0x100_0000,
+                flags: LINKER_FILE_FLAG_KERNEL,
+                build_id: String::new(),
+                filename: "kernel".to_string(),
+                pathname: "/boot/kernel/kernel".to_string(),
+            },
+        );
+        p.symbols.insert(
+            1,
+            vec![
+                SymbolRange {
+                    offset: 0x1000,
+                    size: 0x100,
+                    name: "fork_exit".to_string(),
+                },
+                SymbolRange {
+                    offset: 0x2000,
+                    size: 0x100,
+                    name: "lapic_handle_timer".to_string(),
+                },
+            ],
+        );
+        p.reclassify_idle_interrupts();
+        let idle_flags: Vec<bool> = p
+            .samples
+            .iter()
+            .map(|s| (s.flags & CPU_SAMPLE_FLAG_IDLE) != 0)
+            .collect();
+        assert_eq!(idle_flags, vec![true, false, false, true]);
     }
 
     /// Kernel-profile fixture with an embedded symbol table, so the

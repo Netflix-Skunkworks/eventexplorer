@@ -9,8 +9,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - Flame gear **Show idle**: an `[idle]` bar on the bottom row sized to
-  sampler capacity minus samples for the window and selected CPUs, so bar
-  widths read as a share of all CPU time.
+  sampler capacity minus busy samples for the window and selected CPUs, so
+  bar widths read as a share of all CPU time. Idle-loop samples count in
+  `[idle]` rather than under `kernel → idle`.
+- The flame graph follows the CPU plot's **Scale by CPU frequency**: each
+  sample weighs `freq_mhz / reference` (capped at 1), so with Show idle on
+  the busy share matches the scaled plot.
 - ELLA `fanout_node` `SUBSCRIBER_LEAVE` (101), `SUBSCRIBER_CLIENT` (102),
   `SUBSCRIBER_JOINED` (103) and `NODE_IDENTITY` (3) decode, with
   `ellaevents` detail. A join takes its address and PBCID from the
@@ -44,6 +48,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Interrupt work on an idle CPU counts as busy. The kernel tags every
+  sample on the idle thread `IDLE`, including handlers rooted at
+  `lapic_handle_timer` or `intr_execute_handlers`; the parser now keeps
+  `IDLE` only on stacks rooted at `fork_exit` (the idle loop) that lack
+  `INTR`. On a c117 capture this moved ~0.9% of CPU time from idle
+  to busy in the CPU plot.
 - Windows: `event_explorer.exe` and `elog_cli.exe` embed the app icon, so
   Explorer, shortcuts and the taskbar show it.
 

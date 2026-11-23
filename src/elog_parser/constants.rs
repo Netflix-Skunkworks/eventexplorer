@@ -565,7 +565,9 @@ pub const CPU_SAMPLE_FRAMES_MAX: usize = 64;
 /// stack walks unwind to the syscall trampoline instead).
 pub const CPU_SAMPLE_FLAG_USER_MODE: u8 = 0x01;
 
-/// The sampled thread was the per-CPU idle thread; `frames` will be empty.
+/// The sampled thread was the per-CPU idle thread. The parser clears it on
+/// interrupt stacks that ran on that thread
+/// ([`CpuProfile::reclassify_idle_interrupts`](super::CpuProfile::reclassify_idle_interrupts)).
 /// Useful as a default-off filter — most idle samples are not informative
 /// on a busy box but they are the only signal of "what fraction of CPU
 /// time was spent doing nothing" on a quiet one.

@@ -2260,6 +2260,44 @@ impl CpuProfile {
         }
     }
 
+    /// Clear [`CPU_SAMPLE_FLAG_IDLE`] on idle-thread samples whose stack
+    /// is rooted outside the idle loop. The kernel sets the flag from the
+    /// sampled tid alone, so an interrupt handler running on an idle
+    /// CPU's stack (rooted at `lapic_handle_timer`, `Xapic_isr1`, …)
+    /// carries it too; those samples are busy, as are samples tagged
+    /// [`CPU_SAMPLE_FLAG_INTR`]. Otherwise stacks rooted at
+    /// `fork_exit` / `fork_trampoline`, empty stacks, and roots with no
+    /// kernel symbol stay idle.
+    pub fn reclassify_idle_interrupts(&mut self) {
+        let mut busy_root: FxHashMap<u64, bool> = FxHashMap::default();
+        let mut samples = std::mem::take(&mut self.samples);
+        for s in &mut samples {
+            if (s.flags & CPU_SAMPLE_FLAG_IDLE) == 0 {
+                continue;
+            }
+            if (s.flags & CPU_SAMPLE_FLAG_INTR) != 0 {
+                s.flags &= !CPU_SAMPLE_FLAG_IDLE;
+                continue;
+            }
+            let Some(&root) = s.frames.last() else {
+                continue;
+            };
+            let busy =
+                *busy_root
+                    .entry(root)
+                    .or_insert_with(|| match self.symbolize_kernel(root) {
+                        Some(SymbolHit::Kernel { symbol, .. }) => {
+                            !matches!(symbol.name.as_str(), "fork_exit" | "fork_trampoline")
+                        }
+                        _ => false,
+                    });
+            if busy {
+                s.flags &= !CPU_SAMPLE_FLAG_IDLE;
+            }
+        }
+        self.samples = samples;
+    }
+
     /// The pack id referenced for a linker `file_id`, when one was
     /// emitted and the file has no in-file ranges (in-file wins).
     pub fn pack_ref_for_linker(&self, file_id: u32) -> Option<&str> {

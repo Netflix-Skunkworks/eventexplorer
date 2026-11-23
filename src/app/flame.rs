@@ -142,6 +142,11 @@ pub struct FlameViewState {
     /// Add an `[idle]` bar to the base row so widths read as a share
     /// of all CPU time. Rebuilds the tree.
     pub(crate) show_idle: bool,
+    /// Reference MHz when the CPU plot's "Scale by CPU frequency" is on;
+    /// the tree then weights samples by frequency. Rebuilds the tree.
+    pub(crate) freq_ref_mhz: Option<u16>,
+    /// Tree count of one full-speed sample (see [`FlameFilter::count_unit`]).
+    pub(crate) count_unit: u64,
     /// Last-rendered hover info (for the bottom status strip). Kept in
     /// view state so it survives the egui "moved off the rect" frame.
     pub(crate) hovered: Option<HoveredFrame>,
@@ -363,6 +368,8 @@ impl FlameViewState {
             organize: FlameOrganize::ByProcess,
             blue_user_palette: load_blue_user_flame(),
             show_idle: false,
+            freq_ref_mhz: None,
+            count_unit: 1,
             hovered: None,
             min_bar_width_pct: 0.0,
             compare: None,
@@ -389,9 +396,10 @@ impl FlameViewState {
             return;
         }
         let (group_by_process, kernel_user_base, kernel_group) = self.organize.flags();
+        let filter = self.tree_filter();
         let mut tree = build_flame_tree_with_base(
             profile,
-            &self.filter,
+            &filter,
             self.aggregation,
             self.split_user_by_pid,
             group_by_process,
@@ -399,9 +407,20 @@ impl FlameViewState {
             kernel_group,
         );
         if self.show_idle {
-            analysis::add_idle_base(&mut tree, profile, &self.filter);
+            analysis::add_idle_base(&mut tree, profile, &filter);
         }
+        self.count_unit = filter.count_unit();
         self.install_tree(tree);
+    }
+
+    /// [`Self::filter`] plus the `[idle]` and frequency settings for a
+    /// single-capture tree.
+    pub(crate) fn tree_filter(&self) -> FlameFilter {
+        FlameFilter {
+            skip_idle: self.show_idle,
+            freq_ref_mhz: self.freq_ref_mhz,
+            ..self.filter.clone()
+        }
     }
 
     /// Rebuild the merged diff tree against the installed baseline.
@@ -2092,7 +2111,12 @@ impl EventExplorerApp {
             .compare
             .as_ref()
             .map_or((0, u64::MAX), |c| (c.base_ts_start_us, c.base_ts_end_us));
-        let filter = flame.filter.clone();
+        let filter = if baseline.is_some() {
+            flame.filter.clone()
+        } else {
+            flame.tree_filter()
+        };
+        flame.count_unit = filter.count_unit();
         let target_window = (filter.ts_start_us, filter.ts_end_us);
         let aggregation = flame.aggregation;
         let split = flame.split_user_by_pid;
@@ -2489,6 +2513,13 @@ impl EventExplorerApp {
                     }
                 } else if let Some(p) = panel.as_mut() {
                     p.scale_by_freq = scale_cpu_by_freq;
+                    let freq_ref = scale_cpu_by_freq
+                        .then(|| p.cpu_bins().reference_freq_mhz)
+                        .flatten();
+                    if flame.freq_ref_mhz != freq_ref {
+                        flame.freq_ref_mhz = freq_ref;
+                        needs_rebuild = true;
+                    }
                     p.show_legends = show_legends;
                     let host_t0_us = p.t0_us();
                     let current_sel =
@@ -2784,7 +2815,7 @@ impl EventExplorerApp {
                 ui.label(
                     RichText::new(format!(
                         "{} ({:.2}%)",
-                        fmt_count(search_matches.samples),
+                        fmt_count(search_matches.samples / flame.count_unit.max(1)),
                         pct
                     ))
                     .size(12.0)
@@ -3608,7 +3639,10 @@ impl EventExplorerApp {
                                 fmt_count(cur_total)
                             )
                         }
-                        None => format!("[all {} samples]", fmt_count(visible_root.total_count)),
+                        None => format!(
+                            "[all {} samples]",
+                            fmt_count(visible_root.total_count / flame.count_unit.max(1))
+                        ),
                     }
                 } else {
                     flame_node_label(node, profile_ref, rel_text, show_module)
@@ -3899,7 +3933,7 @@ impl EventExplorerApp {
                     format!(
                         "{}\n\n{} samples ({:.2}% of visible, {:.2}% of total)",
                         hov.label,
-                        fmt_count(hov.total_count),
+                        fmt_count(hov.total_count / flame.count_unit.max(1)),
                         hov.pct_of_visible,
                         hov.pct_of_total,
                     )
@@ -3923,11 +3957,11 @@ impl EventExplorerApp {
                         _ => format!(
                             "{}\n\n{} samples ({:.2}% of visible, {:.2}% of total)\n{} self ({} children)",
                             hov.label,
-                            fmt_count(hov.total_count),
+                            fmt_count(hov.total_count / flame.count_unit.max(1)),
                             hov.pct_of_visible,
                             hov.pct_of_total,
-                            fmt_count(hov.self_count),
-                            fmt_count(hov.total_count - hov.self_count),
+                            fmt_count(hov.self_count / flame.count_unit.max(1)),
+                            fmt_count((hov.total_count - hov.self_count) / flame.count_unit.max(1)),
                         ),
                     }
                 };
@@ -3990,7 +4024,7 @@ impl EventExplorerApp {
                     _ => format!(
                         "{} | {} samples ({:.2}% visible, {:.2}% total)",
                         h.label,
-                        fmt_count(h.total_count),
+                        fmt_count(h.total_count / flame.count_unit.max(1)),
                         h.pct_of_visible,
                         h.pct_of_total,
                     ),
@@ -4016,8 +4050,8 @@ impl EventExplorerApp {
                          {stack_modifier}-click keeps stacks (release applies); \
                          ALT-click hides a stack. \
                          Showing {} of {} samples in {} frames at root.",
-                        fmt_count(visible_root.total_count),
-                        fmt_count(tree_root.total_count),
+                        fmt_count(visible_root.total_count / flame.count_unit.max(1)),
+                        fmt_count(tree_root.total_count / flame.count_unit.max(1)),
                         visible_root.children.len(),
                     ))
                     .size(12.0)
@@ -4650,6 +4684,8 @@ mod tests {
             organize: FlameOrganize::ByProcess,
             blue_user_palette: false,
             show_idle: false,
+            freq_ref_mhz: None,
+            count_unit: 1,
             hovered: None,
             min_bar_width_pct: 0.0,
             compare: None,

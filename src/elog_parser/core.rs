@@ -2025,6 +2025,7 @@ fn parse_elog_from(
         titles.sort_unstable_by_key(|t| t.ts);
     }
     cpu_profile.inherit_fork_proc_maps();
+    cpu_profile.reclassify_idle_interrupts();
     for lines in cpu_profile.source_lines.values_mut() {
         lines.sort_unstable_by_key(|line| line.file_offset);
         lines.dedup_by(|a, b| a.file_offset == b.file_offset);
