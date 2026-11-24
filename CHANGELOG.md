@@ -8,6 +8,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `event_explorer --help` and `--version` print and exit instead of opening
+  a "Failed to open" window. Other `-` options are rejected; `--` ends
+  option parsing.
+
 - Flame gear **Show idle**: an `[idle]` bar on the bottom row sized to
   sampler capacity minus busy samples for the window and selected CPUs, so
   bar widths read as a share of all CPU time.

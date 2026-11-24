@@ -29,7 +29,63 @@ fn load_icon() -> eframe::egui::IconData {
     }
 }
 
+const USAGE: &str = "\
+Usage: event_explorer [OPTIONS] [FILE]...
+
+Open EventLog captures (.elog, .elog.gz) in the EventExplorer GUI.
+Segments of one rolled capture open as one continuous capture.
+Origin segment CSVs (.csv) load alongside the capture.
+
+Options:
+  -h, --help     Print this help and exit
+  -V, --version  Print the version and exit
+  --             Treat every later argument as a file
+
+For command-line analysis, see elog_cli --help.
+";
+
+/// Returns the files to open, or the exit code when the process should exit
+/// without starting the GUI.
+fn parse_args(
+    args: impl Iterator<Item = std::ffi::OsString>,
+) -> Result<Vec<std::path::PathBuf>, i32> {
+    let mut paths = Vec::new();
+    let mut files_only = false;
+    for arg in args {
+        if !files_only {
+            match arg.to_str() {
+                Some("-h" | "--help") => {
+                    print!("{USAGE}");
+                    return Err(0);
+                }
+                Some("-V" | "--version") => {
+                    println!("event_explorer {}", env!("CARGO_PKG_VERSION"));
+                    return Err(0);
+                }
+                Some("--") => {
+                    files_only = true;
+                    continue;
+                }
+                Some(opt) if opt.starts_with('-') && opt.len() > 1 => {
+                    eprintln!("event_explorer: unknown option '{opt}'\n\n{USAGE}");
+                    return Err(2);
+                }
+                _ => {}
+            }
+        }
+        paths.push(std::path::PathBuf::from(arg));
+    }
+    Ok(paths)
+}
+
 fn main() -> eframe::Result<()> {
+    // Every path on the command line, so a shell glob over a rolled set
+    // (`event_explorer capture-*.elog`) opens as one continuous capture.
+    let cli_paths = match parse_args(std::env::args_os().skip(1)) {
+        Ok(paths) => paths,
+        Err(code) => std::process::exit(code),
+    };
+
     #[cfg(target_os = "linux")]
     if std::env::var("DISPLAY").is_ok() {
         std::env::remove_var("WAYLAND_DISPLAY");
@@ -74,13 +130,6 @@ fn main() -> eframe::Result<()> {
         ..Default::default()
     };
 
-    // Every path on the command line, so a shell glob over a rolled set
-    // (`event_explorer capture-*.elog`) opens as one continuous capture.
-    let cli_paths: Vec<std::path::PathBuf> = std::env::args()
-        .skip(1)
-        .map(std::path::PathBuf::from)
-        .collect();
-
     eframe::run_native(
         "EventExplorer",
         native_options,
@@ -92,4 +141,25 @@ fn main() -> eframe::Result<()> {
             Box::new(app)
         }),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_args;
+    use std::ffi::OsString;
+
+    fn parse(args: &[&str]) -> Result<Vec<std::path::PathBuf>, i32> {
+        parse_args(args.iter().map(OsString::from))
+    }
+
+    #[test]
+    fn options_and_files() {
+        assert_eq!(parse(&["--help", "a.elog"]), Err(0));
+        assert_eq!(parse(&["a.elog", "-V"]), Err(0));
+        assert_eq!(parse(&["--bogus"]), Err(2));
+        assert_eq!(
+            parse(&["a.elog", "-", "--", "--help"]),
+            Ok(vec!["a.elog".into(), "-".into(), "--help".into()])
+        );
+    }
 }
