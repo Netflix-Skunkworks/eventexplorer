@@ -1593,6 +1593,8 @@ pub fn build_ella_cdn_metrics_plot_for(
     let mut up_mbps = Vec::new();
     let mut dn_mbps = Vec::new();
     let mut dlvr_mbps = Vec::new();
+    let mut copies_up_mbps = Vec::new();
+    let mut copies_dn_mbps = Vec::new();
     let mut joins_up = Vec::new();
     let mut joins_dn = Vec::new();
     let mut joins_dlvr = Vec::new();
@@ -1617,7 +1619,13 @@ pub fn build_ella_cdn_metrics_plot_for(
         let up = s.bytes_up as f64 * 8.0 / 1_000_000.0 / dt;
         let dn = s.bytes_dn as f64 * 8.0 / 1_000_000.0 / dt;
         let dlvr = s.bytes_dlvr as f64 * 8.0 / 1_000_000.0 / dt;
-        if s.bytes_up | s.bytes_dn | u64::from(s.packets_up | s.packets_dn) != 0 {
+        if s.bytes_up
+            | s.bytes_dn
+            | s.copy_bytes_up
+            | s.copy_bytes_dn
+            | u64::from(s.packets_up | s.packets_dn)
+            != 0
+        {
             saw_traffic = true;
         }
         // Keepalive delivered dumps sometimes carry control-sized
@@ -1635,6 +1643,16 @@ pub fn build_ella_cdn_metrics_plot_for(
         }
         push_rate_point(&mut up_mbps, t, up);
         push_rate_point(&mut dn_mbps, t, dn);
+        push_rate_point(
+            &mut copies_up_mbps,
+            t,
+            s.copy_bytes_up as f64 * 8.0 / 1_000_000.0 / dt,
+        );
+        push_rate_point(
+            &mut copies_dn_mbps,
+            t,
+            s.copy_bytes_dn as f64 * 8.0 / 1_000_000.0 / dt,
+        );
         let ju = s.joins_up as f64 / dt;
         let jd = s.joins_dn as f64 / dt;
         let jdl = s.joins_dlvr as f64 / dt;
@@ -1681,6 +1699,17 @@ pub fn build_ella_cdn_metrics_plot_for(
                 label: "Delivered".into(),
                 data: dlvr_mbps,
             });
+        }
+        for (label, data) in [
+            ("Copies Up", copies_up_mbps),
+            ("Copies Down", copies_dn_mbps),
+        ] {
+            if data.iter().any(|p| p[1] > 0.0) {
+                traffic.push(EllaNamedSeries {
+                    label: label.into(),
+                    data,
+                });
+            }
         }
     }
     let mut joins = Vec::new();
@@ -7800,6 +7829,10 @@ mod tests {
             expiries_dn: 0,
             rejects_up: 0,
             rejects_dn: 0,
+            copies_up: 0,
+            copies_dn: 0,
+            copy_bytes_up: 0,
+            copy_bytes_dn: 0,
             packets_dlvr: 0,
             bytes_dlvr: 0,
             joins_dlvr: 0,
@@ -7823,6 +7856,7 @@ mod tests {
         b.bytes_dn = 1_000_000;
         b.joins_dn = 4;
         b.new_clients = 1;
+        b.copy_bytes_dn = 250_000;
         let prof = EllaProfile {
             counts_total: vec![a, b],
             ..Default::default()
@@ -7834,6 +7868,13 @@ mod tests {
             .find(|s| s.label == "Upstream")
             .expect("upstream");
         assert!((up.data[1][1] - 4.0).abs() < 1e-9, "{:?}", up.data);
+        let copies = plot
+            .traffic
+            .iter()
+            .find(|s| s.label == "Copies Down")
+            .expect("copies");
+        assert!((copies.data[1][1] - 2.0).abs() < 1e-9, "{:?}", copies.data);
+        assert!(!plot.traffic.iter().any(|s| s.label == "Copies Up"));
         let joins = plot
             .joins
             .iter()

@@ -618,6 +618,10 @@ pub struct EllaChannelCountTotal {
     pub expiries_dn: u32,
     pub rejects_up: u32,
     pub rejects_dn: u32,
+    pub copies_up: u32,
+    pub copies_dn: u32,
+    pub copy_bytes_up: u64,
+    pub copy_bytes_dn: u64,
     pub packets_dlvr: u32,
     pub bytes_dlvr: u64,
     pub joins_dlvr: u32,
@@ -903,6 +907,8 @@ pub struct EllaTrafficSample {
     pub expiries: u64,
     pub rejects: u64,
     pub new_clients: u64,
+    pub copies: u64,
+    pub copy_bytes: u64,
     pub level: u32,
 }
 

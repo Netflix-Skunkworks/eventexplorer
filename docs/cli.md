@@ -1065,6 +1065,9 @@ counts. Current ELLA logs `TRAFFIC_STATS`, `DELIVERED_STATS`,
 `CHANNEL_TOTALS` and `FRAME_TOTALS` as running totals; `ellastats`
 prints the difference from the previous sample of the same node and
 side, or channel and instance.
+`copies_dn` / `cbytes_dn` are the DATA copies sent to subscribers
+(packets × recipients) and their bytes; captures from before ELLA
+logged them show 0.
 
 ## `ellaevents [session]`
 

@@ -295,7 +295,7 @@ pub fn cmd_ella_stats(prof: &EllaProfile, capture_start: u64) {
             prof.counts_total.len()
         );
         println!(
-            "{:>10} {:<8} {:>6} {:>6} {:>7} {:>7} {:>10} {:>10} {:>7} {:>7} {:>8} {:>10} {:>8} {:>7} {:>7} {:>9}",
+            "{:>10} {:<8} {:>6} {:>6} {:>7} {:>7} {:>10} {:>10} {:>7} {:>7} {:>8} {:>10} {:>10} {:>12} {:>8} {:>7} {:>7} {:>9}",
             "t(s)",
             "node",
             "ch_up",
@@ -308,6 +308,8 @@ pub fn cmd_ella_stats(prof: &EllaProfile, capture_start: u64) {
             "jn_dn",
             "jn_dlvr",
             "bytes_dn",
+            "copies_dn",
+            "cbytes_dn",
             "new_cli",
             "cli_up",
             "cli_dn",
@@ -316,7 +318,7 @@ pub fn cmd_ella_stats(prof: &EllaProfile, capture_start: u64) {
         for s in &prof.counts_total {
             let t = s.ts.saturating_sub(capture_start) as f64 / 1_000_000.0;
             println!(
-                "{:>10.3} {:<8} {:>6} {:>6} {:>7} {:>7} {:>10} {:>10} {:>7} {:>7} {:>8} {:>10} {:>8} {:>7} {:>7} {:>9}",
+                "{:>10.3} {:<8} {:>6} {:>6} {:>7} {:>7} {:>10} {:>10} {:>7} {:>7} {:>8} {:>10} {:>10} {:>12} {:>8} {:>7} {:>7} {:>9}",
                 t,
                 prof.node_cli_prefix(s.provider_id),
                 s.channels_up,
@@ -329,6 +331,8 @@ pub fn cmd_ella_stats(prof: &EllaProfile, capture_start: u64) {
                 s.joins_dn,
                 s.joins_dlvr,
                 s.bytes_dn.max(s.bytes_up),
+                s.copies_dn,
+                s.copy_bytes_dn,
                 s.new_clients,
                 s.clients_up,
                 s.clients_dn,

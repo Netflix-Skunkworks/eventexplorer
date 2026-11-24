@@ -505,6 +505,10 @@ pub fn ingest_ella_relay(
                 expiries_dn: 0,
                 rejects_up: 0,
                 rejects_dn: 0,
+                copies_up: 0,
+                copies_dn: 0,
+                copy_bytes_up: 0,
+                copy_bytes_dn: 0,
                 packets_dlvr,
                 bytes_dlvr,
                 joins_dlvr,
@@ -516,8 +520,8 @@ pub fn ingest_ella_relay(
             });
             true
         }
-        // Current ELLA widens the counters to u64 totals (69 B packed);
-        // earlier builds logged u32 deltas (41 B).
+        // Current ELLA widens the counters to u64 totals (69 B packed, 85 B
+        // with copies / copy_bytes); earlier builds logged u32 deltas (41 B).
         EVT_ELLA_RELAY_TRAFFIC_STATS if r.typed() || size >= 41 => {
             let wide = if r.typed() {
                 r.field_size("packets") == Some(8)
@@ -544,6 +548,8 @@ pub fn ingest_ella_relay(
                 expiries: n("expiries", 41, 25),
                 rejects: n("rejects", 49, 29),
                 new_clients: n("new_clients", 57, 33),
+                copies: if wide { r.u64("copies", 69) } else { 0 },
+                copy_bytes: if wide { r.u64("copy_bytes", 77) } else { 0 },
                 level: r.u32("clients", if wide { 65 } else { 37 }),
             });
             true
@@ -986,7 +992,7 @@ fn fold_traffic_samples(prof: &mut EllaProfile) {
     for (i, t) in prof.counts_total.iter().enumerate() {
         rows.entry(t.provider_id).or_default().push(i);
     }
-    let mut diff: CounterDiff<(u16, Option<u8>), 8> = CounterDiff::default();
+    let mut diff: CounterDiff<(u16, Option<u8>), 10> = CounterDiff::default();
     for s in &prof.traffic_samples {
         let raw = [
             s.packets,
@@ -997,6 +1003,8 @@ fn fold_traffic_samples(prof: &mut EllaProfile) {
             s.expiries,
             s.rejects,
             s.new_clients,
+            s.copies,
+            s.copy_bytes,
         ];
         let d = if s.cumulative {
             diff.next((s.provider_id, s.side), raw)
@@ -1015,7 +1023,9 @@ fn fold_traffic_samples(prof: &mut EllaProfile) {
             Some(_) => t.clients_dn = s.level,
             None => t.subscribers_dlvr = s.level,
         }
-        let Some([packets, bytes, joins, switches, leaves, expiries, rejects, new_clients]) = d
+        let Some(
+            [packets, bytes, joins, switches, leaves, expiries, rejects, new_clients, copies, copy_bytes],
+        ) = d
         else {
             continue;
         };
@@ -1023,7 +1033,7 @@ fn fold_traffic_samples(prof: &mut EllaProfile) {
         match s.side {
             Some(side) => {
                 let up = side == ELLA_SIDE_UPSTREAM;
-                let (p, b, j, sw, l, e, rj) = if up {
+                let (p, b, j, sw, l, e, rj, c, cb) = if up {
                     (
                         &mut t.packets_up,
                         &mut t.bytes_up,
@@ -1032,6 +1042,8 @@ fn fold_traffic_samples(prof: &mut EllaProfile) {
                         &mut t.leaves_up,
                         &mut t.expiries_up,
                         &mut t.rejects_up,
+                        &mut t.copies_up,
+                        &mut t.copy_bytes_up,
                     )
                 } else {
                     (
@@ -1042,6 +1054,8 @@ fn fold_traffic_samples(prof: &mut EllaProfile) {
                         &mut t.leaves_dn,
                         &mut t.expiries_dn,
                         &mut t.rejects_dn,
+                        &mut t.copies_dn,
+                        &mut t.copy_bytes_dn,
                     )
                 };
                 add(p, packets);
@@ -1051,6 +1065,8 @@ fn fold_traffic_samples(prof: &mut EllaProfile) {
                 add(l, leaves);
                 add(e, expiries);
                 add(rj, rejects);
+                add(c, copies);
+                *cb = cb.saturating_add(copy_bytes);
                 add(&mut t.new_clients, new_clients);
             }
             None => {
@@ -1926,6 +1942,14 @@ mod tests {
         b
     }
 
+    fn traffic_totals_with_copies(side: u8, base: u64) -> Vec<u8> {
+        let mut b = traffic_totals(side, base);
+        b.extend_from_slice(&(base * 3).to_le_bytes());
+        b.extend_from_slice(&(base * 3000).to_le_bytes());
+        assert_eq!(b.len(), 85);
+        b
+    }
+
     fn delivered_totals(base: u64) -> Vec<u8> {
         let mut b = Vec::new();
         for k in 0..4u64 {
@@ -2015,11 +2039,66 @@ mod tests {
         assert_eq!((t[2].packets_up, t[2].bytes_up, t[2].leaves_up), (4, 8, 20));
         assert_eq!((t[2].packets_dn, t[2].expiries_dn), (100, 600));
         assert_eq!(t[2].packets_dlvr, 5);
+        assert!(t.iter().all(|r| r.copies_dn | r.copies_up == 0));
+        assert!(t.iter().all(|r| r.copy_bytes_dn | r.copy_bytes_up == 0));
         assert!(prof.has_cdn_counters());
     }
 
+    /// The 85-byte TRAFFIC_STATS appends `copies` / `copy_bytes` totals,
+    /// differenced per side like the other counters.
     #[test]
-    fn traffic_stats_typed_u64_is_cumulative() {
+    fn traffic_stats_copies_fold_as_differences() {
+        let mut stats = Vec::new();
+        for v in [1u32, 2, 0, 0, 0, 0, 3, 4, 5, 6] {
+            put_u32(&mut stats, v);
+        }
+        let g = ELLA_RELAY_GLOBAL_SESSION;
+        let mut prof = EllaProfile::default();
+        let at = |prof: &mut EllaProfile, ts: u64, id: u32, b: &[u8]| {
+            assert!(ingest_ella_relay(
+                prof,
+                ts,
+                0,
+                0,
+                6,
+                g,
+                id,
+                b,
+                0,
+                b.len(),
+                None
+            ));
+        };
+        for (ts, up, dn) in [(1, 10, 1000), (2, 15, 1600)] {
+            at(
+                &mut prof,
+                ts * 1_000_000,
+                EVT_ELLA_RELAY_CHANNEL_COUNT_TOTAL,
+                &stats,
+            );
+            let ts = ts * 1_000_000 + 1;
+            at(
+                &mut prof,
+                ts,
+                EVT_ELLA_RELAY_TRAFFIC_STATS,
+                &traffic_totals_with_copies(ELLA_SIDE_DOWNSTREAM, dn),
+            );
+            at(
+                &mut prof,
+                ts,
+                EVT_ELLA_RELAY_TRAFFIC_STATS,
+                &traffic_totals_with_copies(ELLA_SIDE_UPSTREAM, up),
+            );
+        }
+        finish_ella_profile(&mut prof);
+        let t = &prof.counts_total;
+        assert_eq!((t[0].copies_dn, t[0].copy_bytes_dn), (0, 0));
+        assert_eq!((t[1].copies_dn, t[1].copy_bytes_dn), (1800, 1_800_000));
+        assert_eq!((t[1].copies_up, t[1].copy_bytes_up), (15, 15_000));
+        assert_eq!((t[1].packets_dn, t[1].clients_dn), (600, 1700));
+    }
+
+    fn typed_traffic_schema(copies: bool) -> ProviderSchema {
         use crate::elog_parser::schema::test_support::{build_blob, FieldSpec};
         let mut fields = vec![FieldSpec::scalar("side", DECODE_TYPE_U8, 0)];
         for (i, n) in [
@@ -2038,7 +2117,11 @@ mod tests {
             fields.push(FieldSpec::scalar(n, DECODE_TYPE_U64, 1 + 8 * i as u16));
         }
         fields.push(FieldSpec::scalar("clients", DECODE_TYPE_U32, 65));
-        let schema = ProviderSchema::parse(&build_blob(
+        if copies {
+            fields.push(FieldSpec::scalar("copies", DECODE_TYPE_U64, 69));
+            fields.push(FieldSpec::scalar("copy_bytes", DECODE_TYPE_U64, 77));
+        }
+        ProviderSchema::parse(&build_blob(
             "fanout_node",
             "TRAFFIC_STATS",
             fields,
@@ -2046,7 +2129,12 @@ mod tests {
             "TRAFFIC_STATS",
             "",
         ))
-        .unwrap();
+        .unwrap()
+    }
+
+    #[test]
+    fn traffic_stats_typed_u64_is_cumulative() {
+        let schema = typed_traffic_schema(false);
         let b = traffic_totals(ELLA_SIDE_DOWNSTREAM, 5_000_000_000);
         let mut prof = EllaProfile::default();
         assert!(ingest_ella_relay(
@@ -2066,6 +2154,31 @@ mod tests {
         assert!(s.cumulative);
         assert_eq!(s.side, Some(ELLA_SIDE_DOWNSTREAM));
         assert_eq!((s.packets, s.new_clients), (5_000_000_000, 40_000_000_000));
+        assert_eq!((s.copies, s.copy_bytes), (0, 0));
+    }
+
+    #[test]
+    fn traffic_stats_typed_reads_copies() {
+        let schema = typed_traffic_schema(true);
+        let b = traffic_totals_with_copies(ELLA_SIDE_DOWNSTREAM, 7);
+        let mut prof = EllaProfile::default();
+        assert!(ingest_ella_relay(
+            &mut prof,
+            1,
+            0,
+            0,
+            6,
+            ELLA_RELAY_GLOBAL_SESSION,
+            EVT_ELLA_RELAY_TRAFFIC_STATS,
+            &b,
+            0,
+            b.len(),
+            Some(&schema),
+        ));
+        let s = &prof.traffic_samples[0];
+        assert!(s.cumulative);
+        assert_eq!((s.packets, s.level), (7, 107));
+        assert_eq!((s.copies, s.copy_bytes), (21, 21_000));
     }
 
     fn channel_totals_payload(inst: u32, subs: u32, objects: u64, bytes: u64) -> Vec<u8> {

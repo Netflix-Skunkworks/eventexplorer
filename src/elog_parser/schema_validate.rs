@@ -1734,6 +1734,8 @@ pub static ELLA_RELAY_EXPECTED: &[ExpectedEvent] = &[
             ExpectedField::new("rejects", 49, 8),
             ExpectedField::new("new_clients", 57, 8),
             ExpectedField::new("clients", 65, 4),
+            ExpectedField::optional("copies", 69, 8),
+            ExpectedField::optional("copy_bytes", 77, 8),
         ],
     },
     // Earlier builds: u32 deltas since the previous sample.
@@ -2253,8 +2255,33 @@ mod tests {
         f
     }
 
-    /// Both CHANNEL_TOTALS layouts and the OFFLOAD_STATS layout with
-    /// `rxring_truncated` validate cleanly, with nothing left undecoded.
+    fn traffic_stats_fields(copies: bool) -> Vec<FieldSpec> {
+        let mut f = vec![FieldSpec::scalar("side", DECODE_TYPE_U8, 0)];
+        for (i, n) in [
+            "packets",
+            "bytes",
+            "joins",
+            "switches",
+            "leaves",
+            "expiries",
+            "rejects",
+            "new_clients",
+        ]
+        .iter()
+        .enumerate()
+        {
+            f.push(FieldSpec::scalar(n, DECODE_TYPE_U64, 1 + 8 * i as u16));
+        }
+        f.push(FieldSpec::scalar("clients", DECODE_TYPE_U32, 65));
+        if copies {
+            f.push(FieldSpec::scalar("copies", DECODE_TYPE_U64, 69));
+            f.push(FieldSpec::scalar("copy_bytes", DECODE_TYPE_U64, 77));
+        }
+        f
+    }
+
+    /// Both CHANNEL_TOTALS and TRAFFIC_STATS layouts and the OFFLOAD_STATS
+    /// layout with `rxring_truncated` validate cleanly, with nothing left undecoded.
     #[test]
     fn ella_totals_and_offload_layouts_validate() {
         let offload = u32_fields(&[
@@ -2284,6 +2311,16 @@ mod tests {
                 channel_totals_fields(true),
             ),
             (EVT_ELLA_RELAY_OFFLOAD_STATS, "OFFLOAD_STATS", offload),
+            (
+                EVT_ELLA_RELAY_TRAFFIC_STATS,
+                "TRAFFIC_STATS",
+                traffic_stats_fields(false),
+            ),
+            (
+                EVT_ELLA_RELAY_TRAFFIC_STATS,
+                "TRAFFIC_STATS",
+                traffic_stats_fields(true),
+            ),
         ] {
             let blob = build_blob_multi(
                 "fanout_node",

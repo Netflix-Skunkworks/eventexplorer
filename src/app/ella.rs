@@ -1825,7 +1825,7 @@ impl EventExplorerApp {
                                     );
                                 ui.label(
                                     RichText::new(
-                                        "Process-wide DATA Mbps from CHANNEL_STATS. Upstream is origin-facing; Downstream is local send; Delivered is subscriber KEEPALIVE reports.",
+                                        "Process-wide DATA Mbps from CHANNEL_STATS. Upstream is origin-facing; Downstream is local send; Copies are DATA copies sent to subscribers; Delivered is subscriber KEEPALIVE reports.",
                                     )
                                     .size(11.0)
                                     .color(Color32::from_gray(160)),
