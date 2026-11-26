@@ -743,6 +743,8 @@ pub const EVT_NGINX_FILE_OPEN_FAIL: u32 = 402;
 pub const EVT_NGINX_CACHE_LOOKUP: u32 = 500;
 pub const EVT_NGINX_UPSTREAM_ATTEMPT_START: u32 = 501;
 pub const EVT_NGINX_UPSTREAM_ATTEMPT_END: u32 = 502;
+pub const EVT_NGINX_UPSTREAM_HEADERS: u32 = 503;
 // Worker-wide events on the special worker session.
 pub const EVT_NGINX_WORKER_STALL: u32 = 600;
 pub const EVT_NGINX_AIO_SYNC_FALLBACK: u32 = 601;
+pub const EVT_NGINX_DB_REOPEN: u32 = 602;

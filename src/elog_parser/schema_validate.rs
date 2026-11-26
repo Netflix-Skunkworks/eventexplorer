@@ -1031,8 +1031,10 @@ pub fn nginx_has_hardcoded_decoder(event_id: u32) -> bool {
             | EVT_NGINX_CACHE_LOOKUP
             | EVT_NGINX_UPSTREAM_ATTEMPT_START
             | EVT_NGINX_UPSTREAM_ATTEMPT_END
+            | EVT_NGINX_UPSTREAM_HEADERS
             | EVT_NGINX_WORKER_STALL
             | EVT_NGINX_AIO_SYNC_FALLBACK
+            | EVT_NGINX_DB_REOPEN
     )
 }
 
@@ -1247,6 +1249,30 @@ pub static NGINX_EXPECTED: &[ExpectedEvent] = &[
             ExpectedField::new("size", 8, 8),
             ExpectedField::new("read_us", 16, 4),
             ExpectedField::new("dev", 20, 8),
+        ],
+    },
+    ExpectedEvent {
+        event_id: EVT_NGINX_UPSTREAM_HEADERS,
+        fields: &[
+            ExpectedField::new("request", 0, 4),
+            ExpectedField::new("subrequest", 4, 1),
+            ExpectedField::new("attempt", 5, 2),
+            ExpectedField::new("status", 7, 2),
+            ExpectedField::new("content_length", 9, 8),
+            ExpectedField::new("last_modified", 17, 8),
+            ExpectedField::new("date", 25, 8),
+            ExpectedField::new("encoder", 33, 48),
+        ],
+    },
+    ExpectedEvent {
+        event_id: EVT_NGINX_DB_REOPEN,
+        fields: &[
+            ExpectedField::new("open_us", 0, 4),
+            ExpectedField::new("init_us", 4, 4),
+            ExpectedField::new("size", 8, 8),
+            ExpectedField::new("mtime", 16, 8),
+            ExpectedField::new("result", 24, 1),
+            ExpectedField::new("file", 25, 48),
         ],
     },
 ];

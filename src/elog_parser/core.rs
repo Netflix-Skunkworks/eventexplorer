@@ -2290,8 +2290,10 @@ fn builtin_event_name(kind: ProviderKind, event_id: u32, split_schema: bool) -> 
             EVT_NGINX_CACHE_LOOKUP => "CACHE_LOOKUP",
             EVT_NGINX_UPSTREAM_ATTEMPT_START => "UPSTREAM_ATTEMPT_START",
             EVT_NGINX_UPSTREAM_ATTEMPT_END => "UPSTREAM_ATTEMPT_END",
+            EVT_NGINX_UPSTREAM_HEADERS => "UPSTREAM_HEADERS",
             EVT_NGINX_WORKER_STALL => "WORKER_STALL",
             EVT_NGINX_AIO_SYNC_FALLBACK => "AIO_SYNC_FALLBACK",
+            EVT_NGINX_DB_REOPEN => "DB_REOPEN",
             _ => "UNKNOWN",
         },
         ProviderKind::Machine => match event_id {

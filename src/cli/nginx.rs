@@ -484,6 +484,29 @@ pub fn nginx_event_detail(p: &NginxPayload) -> String {
             read_us,
             dev,
         } => format!("size={size} offset={offset} read={read_us}us dev={dev}"),
+        NginxPayload::UpstreamHeaders {
+            request,
+            subrequest,
+            attempt,
+            status,
+            content_length,
+            last_modified,
+            date,
+            encoder,
+        } => format!(
+            "request={request} attempt={attempt} status={status} content_length={content_length} last_modified={last_modified} date={date} encoder={encoder} subrequest={subrequest}"
+        ),
+        NginxPayload::DbReopen {
+            open_us,
+            init_us,
+            size,
+            mtime,
+            failed,
+            file,
+        } => format!(
+            "{file} {}: open={open_us}us init={init_us}us size={size} mtime={mtime}",
+            if *failed { "ERROR" } else { "RELOADED" }
+        ),
     }
 }
 
@@ -505,8 +528,10 @@ pub fn nginx_event_name(event_id: u32) -> &'static str {
         EVT_NGINX_CACHE_LOOKUP => "CACHE_LOOKUP",
         EVT_NGINX_UPSTREAM_ATTEMPT_START => "UPSTREAM_ATTEMPT_START",
         EVT_NGINX_UPSTREAM_ATTEMPT_END => "UPSTREAM_ATTEMPT_END",
+            EVT_NGINX_UPSTREAM_HEADERS => "UPSTREAM_HEADERS",
         EVT_NGINX_WORKER_STALL => "WORKER_STALL",
         EVT_NGINX_AIO_SYNC_FALLBACK => "AIO_SYNC_FALLBACK",
+            EVT_NGINX_DB_REOPEN => "DB_REOPEN",
         _ => "UNKNOWN",
     }
 }

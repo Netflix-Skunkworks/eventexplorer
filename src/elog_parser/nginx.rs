@@ -223,6 +223,24 @@ pub fn ingest_nginx(
             read_us: r.u32("read_us", 16),
             dev: r.u64("dev", 20),
         },
+        EVT_NGINX_UPSTREAM_HEADERS if r.typed() || size >= 81 => NginxPayload::UpstreamHeaders {
+            request: r.u32("request", 0),
+            subrequest: r.u8("subrequest", 4) != 0,
+            attempt: r.u16("attempt", 5),
+            status: r.u16("status", 7),
+            content_length: r.i64("content_length", 9),
+            last_modified: r.i64("last_modified", 17),
+            date: r.i64("date", 25),
+            encoder: r.cstr("encoder", 33, 48),
+        },
+        EVT_NGINX_DB_REOPEN if r.typed() || size >= 73 => NginxPayload::DbReopen {
+            open_us: r.u32("open_us", 0),
+            init_us: r.u32("init_us", 4),
+            size: r.u64("size", 8),
+            mtime: r.i64("mtime", 16),
+            failed: r.u8("result", 24) != 0,
+            file: r.cstr("file", 25, 48),
+        },
         _ => return false,
     };
     apply_to_request(prof, provider_id, session_id, ts, &payload);

@@ -1221,6 +1221,26 @@ pub enum NginxPayload {
         read_us: u32,
         dev: u64,
     },
+    /// Upstream response headers; times are unix seconds, -1 when absent.
+    UpstreamHeaders {
+        request: u32,
+        subrequest: bool,
+        attempt: u16,
+        status: u16,
+        content_length: i64,
+        last_modified: i64,
+        date: i64,
+        encoder: String,
+    },
+    /// A CDB file reload (`nflx_db_file_reopen_notice`).
+    DbReopen {
+        open_us: u32,
+        init_us: u32,
+        size: u64,
+        mtime: i64,
+        failed: bool,
+        file: String,
+    },
 }
 
 /// `REQUEST_DONE` fields appended with the connection diagnostics events.
@@ -1337,7 +1357,8 @@ impl NginxPayload {
             | NginxPayload::FileOpenFail { request, .. }
             | NginxPayload::CacheLookup(NginxCacheLookup { request, .. })
             | NginxPayload::UpstreamAttemptStart { request, .. }
-            | NginxPayload::UpstreamAttemptEnd { request, .. } => Some(*request),
+            | NginxPayload::UpstreamAttemptEnd { request, .. }
+            | NginxPayload::UpstreamHeaders { request, .. } => Some(*request),
             _ => None,
         }
     }
